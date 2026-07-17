@@ -52,3 +52,28 @@ div.has-error> .form-text {
     font-size: 1.2rem;
 }
 
+.table-price{
+    max-height:450px;
+    overflow:auto;
+}
+
+.table-price table{
+    min-width:1400px;
+}
+
+.table-price th{
+    position: sticky;
+    top:0;
+    background:#fff;
+    z-index:10;
+}
+
+.table-price td,
+.table-price th{
+    white-space:nowrap;
+    padding:10px 12px;
+}
+
+.table-price input{
+    min-width:80px;
+}

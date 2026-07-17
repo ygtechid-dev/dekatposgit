@@ -90,7 +90,7 @@
                                         <input type="text" name="product_code_name" id="lims_productcodeSearch" placeholder="Please type product code and select..." class="form-control" />
                                     </div>
                                     <label>{{trans('file.Combo Products')}}</label>
-                                    <div class="table-responsive">
+                                    <div class="table-responsive table-price">
                                         <table id="myTable" class="table table-hover order-list">
                                             <thead>
                                                 <tr>
