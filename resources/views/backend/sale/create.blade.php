@@ -915,19 +915,27 @@ $("#myTable").on("change", ".batch-no", function () {
 
 function isCashRegisterAvailable(warehouse_id) {
     $.ajax({
-        url: '../cash-register/check-availability/'+warehouse_id,
+        url: 'cash-register/check-availability/' + warehouse_id,
         type: "GET",
-        success:function(data) {
-            if(data == 'false') {
+        success: function(data) {
+            if (data.status == 'need_deposit') {
+                $("#register-details-btn").removeClass('d-none'); // biar dia bisa akses detail
+                alert(data.message);
+                $('.payment-form :input').prop('disabled', true); // kunci form penjualan
+                $("#register-details-btn").trigger('click'); // langsung buka modal detail
+            } else if (data.status == 'closed') {
+                $('.payment-form :input').prop('disabled', false);
+                $("#register-details-btn").addClass('d-none');
                 $('#cash-register-modal select[name=warehouse_id]').val(warehouse_id);
-                $('.selectpicker').selectpicker('refresh');
-                if(role_id <= 2){
+                if (role_id <= 2)
                     $("#cash-register-modal .warehouse-section").removeClass('d-none');
-                }
-                else {
+                else
                     $("#cash-register-modal .warehouse-section").addClass('d-none');
-                }
+                $('.selectpicker').selectpicker('refresh');
                 $("#cash-register-modal").modal('show');
+            } else { // 'open'
+                $('.payment-form :input').prop('disabled', false);
+                $("#register-details-btn").removeClass('d-none');
             }
         }
     });
