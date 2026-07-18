@@ -1,0 +1,5 @@
+[19-Jan-2026 11:15:39 Asia/Jakarta] PHP Fatal error:  Uncaught UnexpectedValueException: RecursiveDirectoryIterator::__construct(../install): Failed to open directory: No such file or directory in /home/dposmyid/salepro.dpos.my.id/public/delete.php:4
+Stack trace:
+#0 /home/dposmyid/salepro.dpos.my.id/public/delete.php(4): RecursiveDirectoryIterator->__construct()
+#1 {main}
+  thrown in /home/dposmyid/salepro.dpos.my.id/public/delete.php on line 4
