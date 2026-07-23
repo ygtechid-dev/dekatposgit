@@ -819,7 +819,7 @@
                                             </div>
                                         </div>
                                     </div>
-                                    <div class="col-md-2">
+                                    <div class="col-md-2 d-none">
                                         <select name="currency" id="currency" class="form-control selectpicker" data-toggle="tooltip" title="" data-original-title="Sale currency">
                                             @foreach($currency_list as $currency_data)
                                             <option value="{{$currency_data->id}}" data-rate="{{$currency_data->exchange_rate}}">{{$currency_data->code}}</option>
@@ -827,7 +827,7 @@
                                         </select>
                                         <input type="hidden" name="currency_id" value="{{$currency->id}}" />
                                     </div>
-                                    <div class="col-md-2">
+                                    <div class="col-md-2 d-none">
                                         <div class="form-group d-flex">
                                             <input class="form-control" type="text" id="exchange_rate" name="exchange_rate" value="{{$currency->exchange_rate}}">
                                             <div class="input-group-append">
@@ -926,9 +926,9 @@
                                                       <input type="text" class="form-control batch-no" disabled/> <input type="hidden" class="product-batch-id" name="product_batch_id[]"/>
                                                     </td>
                                                     @endif
-                                                    <td class="col-sm-2 product-price">{{ number_format((float)($product_sale->total / $product_sale->qty), $general_setting->decimal, '.', '')}}</td>
+                                                    <td class="col-sm-2 product-price">{{ number_format((float)($product_sale->total / $product_sale->qty), $general_setting->decimal, ',', '.')}}</td>
                                                     <td class="col-sm-3"><div class="input-group"><span class="input-group-btn"><button type="button" class="btn btn-default minus"><span class="dripicons-minus"></span></button></span><input type="text" name="qty[]" class="form-control qty numkey input-number" value="{{$product_sale->qty}}" step="any" required><span class="input-group-btn"><button type="button" class="btn btn-default plus"><span class="dripicons-plus"></span></button></span></div></td>
-                                                    <td class="col-sm-2 sub-total">{{ number_format((float)$product_sale->total, $general_setting->decimal, '.', '')}}</td>
+                                                    <td class="col-sm-2 sub-total">{{ number_format((float)$product_sale->total, $general_setting->decimal, ',', '.')}}</td>
                                                     <td class="col-sm-1"><button type="button" class="ibtnDel btn btn-danger btn-sm"><i class="dripicons-cross"></i></button></td>
                                                     <input type="hidden" class="product-code" name="product_code[]" value="{{$product_data->code}}"/>
                                                     <input type="hidden" class="product-id" name="product_id[]" value="{{$product_data->id}}"/>
@@ -1011,38 +1011,38 @@
                                             <span class="totals-title">{{trans('file.Items')}}</span><span id="item">{{$lims_sale_data->item}} ({{$lims_sale_data->total_qty}})</span>
                                         </div>
                                         <div class="col-sm-4">
-                                            <span class="totals-title">{{trans('file.Total')}}</span><span id="subtotal">{{number_format((float)$lims_sale_data->total_price, $general_setting->decimal, '.', '')}}</span>
+                                            <span class="totals-title">{{trans('file.Total')}}</span><span id="subtotal">{{number_format((float)$lims_sale_data->total_price, $general_setting->decimal, ',', '.')}}</span>
                                         </div>
                                         <div class="col-sm-4">
                                             <span class="totals-title">{{trans('file.Discount')}} <button type="button" class="btn btn-link btn-sm" data-toggle="modal" data-target="#order-discount"> <i class="dripicons-document-edit"></i></button></span>
                                             @if($lims_sale_data->order_discount)
-                                            <span id="discount">{{number_format((float)$lims_sale_data->order_discount, $general_setting->decimal, '.', '')}}</span>
+                                            <span id="discount">{{number_format((float)$lims_sale_data->order_discount, $general_setting->decimal, ',', '.')}}</span>
                                             @else
-                                            <span id="discount">{{number_format(0, $general_setting->decimal, '.', '')}}</span>
+                                            <span id="discount">{{number_format(0, $general_setting->decimal, ',', '.')}}</span>
                                             @endif
                                         </div>
                                         <div class="col-sm-4">
                                             <span class="totals-title">{{trans('file.Coupon')}} <button type="button" class="btn btn-link btn-sm" data-toggle="modal" data-target="#coupon-modal"><i class="dripicons-document-edit"></i></button></span>
                                             @if($lims_sale_data->coupon_discount)
-                                              <span id="coupon-text">{{number_format((float)$lims_sale_data->coupon_discount, $general_setting->decimal, '.', '')}}</span>
+                                              <span id="coupon-text">{{number_format((float)$lims_sale_data->coupon_discount, $general_setting->decimal, ',', '.')}}</span>
                                             @else
-                                              <span id="coupon-text">{{number_format(0, $general_setting->decimal, '.', '')}}</span>
+                                              <span id="coupon-text">{{number_format(0, $general_setting->decimal, ',', '.')}}</span>
                                             @endif
                                         </div>
                                         <div class="col-sm-4">
                                             <span class="totals-title">{{trans('file.Tax')}} <button type="button" class="btn btn-link btn-sm" data-toggle="modal" data-target="#order-tax"><i class="dripicons-document-edit"></i></button></span>
                                             @if($lims_sale_data->order_tax)
-                                              <span id="tax">{{number_format((float)$lims_sale_data->order_tax, $general_setting->decimal, '.', '')}}</span>
+                                              <span id="tax">{{number_format((float)$lims_sale_data->order_tax, $general_setting->decimal, ',', '.')}}</span>
                                             @else
-                                              <span id="tax">{{number_format(0, $general_setting->decimal, '.', '')}}</span>
+                                              <span id="tax">{{number_format(0, $general_setting->decimal, ',', '.')}}</span>
                                             @endif
                                         </div>
                                         <div class="col-sm-4">
                                             <span class="totals-title">{{trans('file.Shipping')}} <button type="button" class="btn btn-link btn-sm" data-toggle="modal" data-target="#shipping-cost-modal"><i class="dripicons-document-edit"></i></button></span>
                                             @if($lims_sale_data->shipping_cost)
-                                              <span id="shipping-cost">{{number_format((float)$lims_sale_data->shipping_cost, $general_setting->decimal, '.', '')}}</span>
+                                              <span id="shipping-cost">{{number_format((float)$lims_sale_data->shipping_cost, $general_setting->decimal, ',', '.')}}</span>
                                             @else
-                                              <span id="shipping-cost">{{number_format(0, $general_setting->decimal, '.', '')}}</span>
+                                              <span id="shipping-cost">{{number_format(0, $general_setting->decimal, ',', '.')}}</span>
                                             @endif
                                         </div>
                                     </div>
@@ -1051,7 +1051,7 @@
                         </div>
                     </div>
                     <div class="payment-amount">
-                        <h2>{{trans('file.grand total')}} <span id="grand-total">{{number_format((float)$lims_sale_data->grand_total, $general_setting->decimal, '.', '')}}</span></h2>
+                        <h2>{{trans('file.grand total')}} <span id="grand-total">{{number_format((float)$lims_sale_data->grand_total, $general_setting->decimal, ',', '.')}}</span></h2>
                     </div>
                     <div class="payment-options">
                         @php
@@ -1201,7 +1201,7 @@
                                         </div>
                                         <div class="col-md-3">
                                             <label>{{trans('file.Change')}} : </label>
-                                            <p id="change" class="ml-2">{{number_format(0, $general_setting->decimal, '.', '')}}</p>
+                                            <p id="change" class="ml-2">{{number_format(0, $general_setting->decimal, ',', '.')}}</p>
                                         </div>
                                         <div class="col-md-3">
                                             <label>{{trans('file.Paid By')}}</label>
@@ -2811,12 +2811,12 @@ function calculateGrandTotal() {
     var order_tax = parseFloat($('select[name="order_tax_rate"]').val());
     var order_discount = parseFloat($('input[name="order_discount"]').val()*currency['exchange_rate']);
     if (!order_discount)
-        order_discount = {{number_format(0, $general_setting->decimal, '.', '')}};
+        order_discount = {{number_format(0, $general_setting->decimal, ',', '.')}};
     $("#discount").text(order_discount.toFixed({{$general_setting->decimal}}));
 
     var shipping_cost = parseFloat($('input[name="shipping_cost"]').val()*currency['exchange_rate']);
     if (!shipping_cost)
-        shipping_cost = {{number_format(0, $general_setting->decimal, '.', '')}};
+        shipping_cost = {{number_format(0, $general_setting->decimal, ',', '.')}};
 
     item = ++item + '(' + total_qty + ')';
     order_tax = (subtotal - order_discount) * (order_tax / 100);
@@ -2826,7 +2826,7 @@ function calculateGrandTotal() {
     couponDiscount();
     var coupon_discount = parseFloat($('input[name="coupon_discount"]').val());
     if (!coupon_discount)
-        coupon_discount = {{number_format(0, $general_setting->decimal, '.', '')}};
+        coupon_discount = {{number_format(0, $general_setting->decimal, ',', '.')}};
     grand_total -= coupon_discount;
 
     $('#item').text(item);

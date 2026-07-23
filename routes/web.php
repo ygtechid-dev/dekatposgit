@@ -274,12 +274,13 @@ Route::group(['middleware' => ['common', 'auth', 'active']], function() {
     Route::controller(RackPlanController::class)->group(function () {
         Route::get('rak/plan-toko', 'planToko')->name('rack.planToko');
         Route::get('rak/plan-gudang', 'planGudang')->name('rack.planGudang');
+        Route::get('rak/options/{warehouse_id}', 'rackOptions')->name('rack.planOptions');
         Route::get('rak/plan-data/{warehouse_id}', 'list')->name('rack.planList');
+        Route::get('rak/getproduct/{warehouse_id}', 'getProductPool')->name('rack.getproduct');
         Route::post('rak/plan-assign', 'assign')->name('rack.planAssign');
         Route::put('rak/plan-update/{id}', 'updateRack')->name('rack.planUpdate');
         Route::delete('rak/plan-remove/{id}', 'remove')->name('rack.planRemove');
     });
-    Route::get('rak/getproduct/{id}', [AdjustmentController::class, 'getProduct'])->name('rack.getproduct');
     Route::get('rak/lims_product_search', [AdjustmentController::class, 'limsProductSearch'])->name('rack.product.search');
 
 
@@ -318,6 +319,8 @@ Route::group(['middleware' => ['common', 'auth', 'active']], function() {
         Route::get('customer/lims_customer_search', 'limsCustomerSearch')->name('customer.search');
         Route::post('customers/clear-due', 'clearDue')->name('customer.clearDue');
         Route::get('customers/all', 'customersAll')->name('customer.all');
+        Route::get('customers/piutang', 'duePayment')->name('customer.duePayment');
+        Route::get('customers/piutang/{id}/invoices', 'dueInvoices')->name('customer.dueInvoices');
     });
     Route::resource('customer', CustomerController::class)->except('show');
 
@@ -397,6 +400,7 @@ Route::group(['middleware' => ['common', 'auth', 'active']], function() {
         Route::prefix('purchases')->group(function () {
             Route::post('purchase-data', 'purchaseData')->name('purchases.data');
             Route::get('product_purchase/{id}', 'productPurchaseData');
+            Route::get('product_suggestions', 'productSuggestions')->name('product_purchase.suggestions');
             Route::get('lims_product_search', 'limsProductSearch')->name('product_purchase.search');
             Route::post('add_payment', 'addPayment')->name('purchase.add-payment');
             Route::get('getpayment/{id}', 'getPayment')->name('purchase.get-payment');

@@ -212,7 +212,7 @@ class ReturnPurchaseController extends Controller
                     $supplier = new Supplier;
                     $nestedData['supplier'] = 'N/A';
                 }
-                $nestedData['grand_total'] = number_format($returns->grand_total, config('decimal'));
+                $nestedData['grand_total'] = number_format($returns->grand_total, config('decimal'), ',', '.');
                 $nestedData['options'] = '<div class="btn-group">
                             <button type="button" class="btn btn-default btn-sm dropdown-toggle" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">'.trans("file.action").'
                               <span class="caret"></span>
@@ -910,6 +910,18 @@ class ReturnPurchaseController extends Controller
                 PurchaseProductReturn::create($product_return);
         }
         $lims_return_data->update($data);
+
+        // Jurnal otomatis: edit retur pembelian (ubah item/harga) bisa mengubah
+        // grand_total, jadi jurnal 'return_purchase' lama dihapus lalu
+        // diposting ulang dengan angka terbaru - sama seperti alur di store().
+        try {
+            JournalService::reverseForReference('return_purchase', $lims_return_data->id);
+            $persediaan_id = JournalService::accountIdByCode(JournalService::PERSEDIAAN);
+            $debit_id = JournalService::coaIdForCashAccount($lims_return_data->account_id);
+            JournalService::postSimple($lims_return_data->created_at ?? now(), 'Retur pembelian ' . $lims_return_data->reference_no, $debit_id, $persediaan_id, $lims_return_data->grand_total, 'return_purchase', $lims_return_data->id);
+        } catch (\Exception $e) {
+            // Jangan sampai kegagalan posting jurnal membatalkan update retur itu sendiri.
+        }
         $message = 'Return updated successfully';
         if($data['supplier_id']) {
             $lims_supplier_data = Supplier::find($data['supplier_id']);

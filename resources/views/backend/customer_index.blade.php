@@ -18,9 +18,9 @@
             <h3>{{trans('file.Reward Points')}}: <span>{{$customer->points}}</span> </h3>
             <h3>{{trans('file.One Point is Equivalent to:')}}
                 @if($general_setting->currency_position == 'prefix')
-                    <span>{{$currency->code}} {{$lims_reward_point_setting_data->per_point_amount}}</span>
+                    <span>{{$currency->code}} {{number_format($lims_reward_point_setting_data->per_point_amount, 2, ',', '.')}}</span>
                 @else
-                    <span>{{$lims_reward_point_setting_data->per_point_amount}} {{$currency->code}}</span>
+                    <span>{{number_format($lims_reward_point_setting_data->per_point_amount, 2, ',', '.')}} {{$currency->code}}</span>
                 @endif
             </h3>
         </div>
@@ -112,9 +112,9 @@
                         @else
                         <td><div class="badge badge-success">{{trans('file.Paid')}}</div></td>
                         @endif
-                        <td>{{number_format($sale->grand_total, 2)}}</td>
-                        <td>{{number_format($sale->paid_amount, 2)}}</td>
-                        <td>{{number_format($sale->grand_total - $sale->paid_amount, 2)}}</td>
+                        <td>{{number_format($sale->grand_total, 2, ',', '.')}}</td>
+                        <td>{{number_format($sale->paid_amount, 2, ',', '.')}}</td>
+                        <td>{{number_format($sale->grand_total - $sale->paid_amount, 2, ',', '.')}}</td>
                         <td><button type="button" class="btn btn-info btn-sm sale-view-btn" title="{{trans('file.View')}}"><i class="dripicons-preview"></i></button></td>
                       </tr>
                       @endforeach
@@ -128,9 +128,9 @@
                           <th></th>
                           <th></th>
                           <th></th>
-                          <th>{{number_format(0, $general_setting->decimal, '.', '')}}</th>
-                          <th>{{number_format(0, $general_setting->decimal, '.', '')}}</th>
-                          <th>{{number_format(0, $general_setting->decimal, '.', '')}}</th>
+                          <th>{{number_format(0, $general_setting->decimal, ',', '.')}}</th>
+                          <th>{{number_format(0, $general_setting->decimal, ',', '.')}}</th>
+                          <th>{{number_format(0, $general_setting->decimal, ',', '.')}}</th>
                           <th></th>
                       </tr>
                     </tfoot>
@@ -158,7 +158,7 @@
                                     <td>{{date($general_setting->date_format, strtotime($payment->created_at))}}</td>
                                     <td>{{$payment->payment_reference}}</td>
                                     <td>{{$payment->sale_reference}}</td>
-                                    <td>{{$payment->amount}}</td>
+                                    <td>{{number_format($payment->amount, 2, ',', '.')}}</td>
                                     <td>{{$payment->paying_method}}</td>
                                 </tr>
                             @endforeach
@@ -169,7 +169,7 @@
                                 <th>Total:</th>
                                 <th></th>
                                 <th></th>
-                                <th>{{number_format(0, $general_setting->decimal, '.', '')}}</th>
+                                <th>{{number_format(0, $general_setting->decimal, ',', '.')}}</th>
                                 <th></th>
                             </tr>
                         </tfoot>
@@ -217,7 +217,7 @@
                                 @else
                                     <td><div class="badge badge-success">{{$status}}</div></td>
                                 @endif
-                                <td>{{ $quotation->grand_total }}</td>
+                                <td>{{ number_format($quotation->grand_total, 2, ',', '.') }}</td>
                                 <td><button type="button" class="btn btn-info btn-sm quotation-view-btn" title="{{trans('file.View')}}"><i class="dripicons-preview"></i></button></td>
                             </tr>
                             @endforeach
@@ -261,7 +261,7 @@
                                 <td>{{ $return->biller->name }}</td>
                                 <td>{{ $return->customer->name }}</td>
                                 <td>{{$return->warehouse->name}}</td>
-                                <td class="grand-total">{{ $return->grand_total }}</td>
+                                <td class="grand-total">{{ number_format($return->grand_total, 2, ',', '.') }}</td>
                                 <td><button type="button" class="btn btn-info btn-sm return-view-btn" title="{{trans('file.View')}}"><i class="dripicons-preview"></i></button></td>
                             </tr>
                             @endforeach

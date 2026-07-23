@@ -103,39 +103,57 @@ class AdjustmentController extends Controller
 
     public function getProduct($id)
     {
+        // Kalau gudang/toko ini menggunakan rak, barang yang belum di-plan ke
+        // rak (product_warehouse.rack_id masih kosong) TIDAK BOLEH muncul di
+        // pool pencarian penyesuaian sama sekali - harus di-plan dulu lewat
+        // menu Plan Toko/Plan Gudang sebelum bisa disesuaikan.
+        $warehouseUsesRacks = Rack::where(['warehouse_id' => $id, 'is_active' => true])->exists();
+
         $lims_product_warehouse_data = DB::table('products')
                                     ->join('product_warehouse', 'products.id', '=', 'product_warehouse.product_id')
+                                    ->leftJoin('racks', 'product_warehouse.rack_id', '=', 'racks.id')
                                     ->whereNull('products.is_variant')
                                     ->where([
                                         ['products.is_active', true],
                                         ['product_warehouse.warehouse_id', $id]
                                     ])
-                                    ->select('product_warehouse.qty', 'products.code', 'products.name', 'product_warehouse.product_id', 'products.cost')
+                                    ->when($warehouseUsesRacks, function($query) {
+                                        $query->whereNotNull('product_warehouse.rack_id');
+                                    })
+                                    ->select('product_warehouse.qty', 'products.code', 'products.name', 'product_warehouse.product_id', 'products.cost', 'product_warehouse.rack_id', 'racks.name as rack_name')
                                     ->get();
         $lims_product_withVariant_warehouse_data = DB::table('products')
                                     ->join('product_warehouse', 'products.id', '=', 'product_warehouse.product_id')
+                                    ->leftJoin('racks', 'product_warehouse.rack_id', '=', 'racks.id')
                                     ->whereNotNull('products.is_variant')
                                     ->where([
                                         ['products.is_active', true],
                                         ['product_warehouse.warehouse_id', $id]
                                     ])
-                                    ->select('products.name', 'product_warehouse.qty', 'product_warehouse.product_id', 'product_warehouse.variant_id', 'products.cost')
+                                    ->when($warehouseUsesRacks, function($query) {
+                                        $query->whereNotNull('product_warehouse.rack_id');
+                                    })
+                                    ->select('products.name', 'product_warehouse.qty', 'product_warehouse.product_id', 'product_warehouse.variant_id', 'products.cost', 'product_warehouse.rack_id', 'racks.name as rack_name')
                                     ->get();
         $product_code = [];
         $product_name = [];
         $product_qty = [];
         $product_cost = [];
+        $product_rack_id = [];
+        $product_rack_name = [];
         $product_data = [];
         foreach ($lims_product_warehouse_data as $product_warehouse)
         {
             $product_qty[] = $product_warehouse->qty;
             $product_code[] =  $product_warehouse->code;
             $product_name[] = $product_warehouse->name;
+            $product_rack_id[] = $product_warehouse->rack_id;
+            $product_rack_name[] = $product_warehouse->rack_name;
             $query = array(
                     'SUM(qty) AS total_qty',
                     'SUM(total) AS total_cost'
                 );
-            $product_purchase_data = ProductPurchase::join('purchases', 'product_purchases.product_id', '=', 'purchases.id')
+            $product_purchase_data = ProductPurchase::join('purchases', 'product_purchases.purchase_id', '=', 'purchases.id')
                                     ->where([
                                         ['product_id', $product_warehouse->product_id],
                                         ['warehouse_id', $id]
@@ -153,11 +171,13 @@ class AdjustmentController extends Controller
                 $product_qty[] = $product_warehouse->qty;
                 $product_code[] =  $product_variant->item_code;
                 $product_name[] = $product_warehouse->name;
+                $product_rack_id[] = $product_warehouse->rack_id;
+                $product_rack_name[] = $product_warehouse->rack_name;
                 $query = array(
                     'SUM(qty) AS total_qty',
                     'SUM(total) AS total_cost'
                 );
-                $product_purchase_data = ProductPurchase::join('purchases', 'product_purchases.product_id', '=', 'purchases.id')
+                $product_purchase_data = ProductPurchase::join('purchases', 'product_purchases.purchase_id', '=', 'purchases.id')
                                         ->where([
                                             ['product_id', $product_warehouse->product_id],
                                             ['variant_id', $product_warehouse->variant_id],
@@ -174,6 +194,8 @@ class AdjustmentController extends Controller
         $product_data[] = $product_name;
         $product_data[] = $product_qty;
         $product_data[] = $product_cost;
+        $product_data[] = $product_rack_id;
+        $product_data[] = $product_rack_name;
         return $product_data;
     }
 

@@ -61,7 +61,7 @@
                             @if($supplier->postal_code){{','.$supplier->postal_code}}@endif
                             @if($supplier->country){{','.$supplier->country}}@endif
                     </td>
-                    <td>{{number_format($purchaseData->grand_total - $returned_amount - $purchaseData->paid_amount, 2)}}</td>
+                    <td>{{number_format($purchaseData->grand_total - $returned_amount - $purchaseData->paid_amount, 2, ',', '.')}}</td>
                     <td>
                         <div class="btn-group">
                             <button type="button" class="btn btn-default btn-sm dropdown-toggle" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">{{trans('file.action')}}

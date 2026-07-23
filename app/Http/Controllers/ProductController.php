@@ -337,13 +337,15 @@ class ProductController extends Controller
                 else
                     $nestedData['unit'] = 'N/A';
 
-                $nestedData['price'] = $product->price;
-                $nestedData['cost'] = $product->cost;
+                $nestedData['price'] = number_format((float)$product->price, config('decimal'), ',', '.');
+                $nestedData['cost'] = number_format((float)$product->cost, config('decimal'), ',', '.');
 
+                $stock_worth_price = number_format($nestedData['qty'] * $product->price, config('decimal'), ',', '.');
+                $stock_worth_cost = number_format($nestedData['qty'] * $product->cost, config('decimal'), ',', '.');
                 if(config('currency_position') == 'prefix')
-                    $nestedData['stock_worth'] = config('currency').' '.($nestedData['qty'] * $product->price).' / '.config('currency').' '.($nestedData['qty'] * $product->cost);
+                    $nestedData['stock_worth'] = config('currency').' '.$stock_worth_price.' / '.config('currency').' '.$stock_worth_cost;
                 else
-                    $nestedData['stock_worth'] = ($nestedData['qty'] * $product->price).' '.config('currency').' / '.($nestedData['qty'] * $product->cost).' '.config('currency');
+                    $nestedData['stock_worth'] = $stock_worth_price.' '.config('currency').' / '.$stock_worth_cost.' '.config('currency');
 
                 //fetching custom fields data
                 foreach($field_names as $field_name) {
@@ -816,13 +818,13 @@ class ProductController extends Controller
                 $nestedData['reference_no'] = $sale->reference_no;
                 $nestedData['warehouse'] = $sale->warehouse_name;
                 $nestedData['customer'] = $sale->customer_name.' ['.($sale->customer_number).']';
-                $nestedData['qty'] = number_format($sale->qty, config('decimal'));
+                $nestedData['qty'] = number_format($sale->qty, config('decimal'), ',', '.');
                 if($sale->sale_unit_id) {
                     $unit_data = DB::table('units')->select('unit_code')->find($sale->sale_unit_id);
                     $nestedData['qty'] .= ' '.$unit_data->unit_code;
                 }
-                $nestedData['unit_price'] = number_format(($sale->total / $sale->qty), config('decimal'));
-                $nestedData['sub_total'] = number_format($sale->total, config('decimal'));
+                $nestedData['unit_price'] = number_format(($sale->total / $sale->qty), config('decimal'), ',', '.');
+                $nestedData['sub_total'] = number_format($sale->total, config('decimal'), ',', '.');
                 $data[] = $nestedData;
             }
         }
@@ -909,13 +911,13 @@ class ProductController extends Controller
                     $nestedData['supplier'] = $purchase->supplier_name.' ['.($purchase->supplier_number).']';
                 else
                     $nestedData['supplier'] = 'N/A';
-                $nestedData['qty'] = number_format($purchase->qty, config('decimal'));
+                $nestedData['qty'] = number_format($purchase->qty, config('decimal'), ',', '.');
                 if($purchase->purchase_unit_id) {
                     $unit_data = DB::table('units')->select('unit_code')->find($purchase->purchase_unit_id);
                     $nestedData['qty'] .= ' '.$unit_data->unit_code;
                 }
-                $nestedData['unit_cost'] = number_format(($purchase->total / $purchase->qty), config('decimal'));
-                $nestedData['sub_total'] = number_format($purchase->total, config('decimal'));
+                $nestedData['unit_cost'] = number_format(($purchase->total / $purchase->qty), config('decimal'), ',', '.');
+                $nestedData['sub_total'] = number_format($purchase->total, config('decimal'), ',', '.');
                 $data[] = $nestedData;
             }
         }
@@ -1001,13 +1003,13 @@ class ProductController extends Controller
                 $nestedData['reference_no'] = $returns->reference_no;
                 $nestedData['warehouse'] = $returns->warehouse_name;
                 $nestedData['customer'] = $returns->customer_name.' ['.($returns->customer_number).']';
-                $nestedData['qty'] = number_format($returns->qty, config('decimal'));
+                $nestedData['qty'] = number_format($returns->qty, config('decimal'), ',', '.');
                 if($returns->sale_unit_id) {
                     $unit_data = DB::table('units')->select('unit_code')->find($returns->sale_unit_id);
                     $nestedData['qty'] .= ' '.$unit_data->unit_code;
                 }
-                $nestedData['unit_price'] = number_format(($returns->total / $returns->qty), config('decimal'));
-                $nestedData['sub_total'] = number_format($returns->total, config('decimal'));
+                $nestedData['unit_price'] = number_format(($returns->total / $returns->qty), config('decimal'), ',', '.');
+                $nestedData['sub_total'] = number_format($returns->total, config('decimal'), ',', '.');
                 $data[] = $nestedData;
             }
         }
@@ -1095,13 +1097,13 @@ class ProductController extends Controller
                     $nestedData['supplier'] = $return_purchase->supplier_name.' ['.($return_purchase->supplier_number).']';
                 else
                     $nestedData['supplier'] = 'N/A';
-                $nestedData['qty'] = number_format($return_purchase->qty, config('decimal'));
+                $nestedData['qty'] = number_format($return_purchase->qty, config('decimal'), ',', '.');
                 if($return_purchase->purchase_unit_id) {
                     $unit_data = DB::table('units')->select('unit_code')->find($return_purchase->purchase_unit_id);
                     $nestedData['qty'] .= ' '.$unit_data->unit_code;
                 }
-                $nestedData['unit_cost'] = number_format(($return_purchase->total / $return_purchase->qty), config('decimal'));
-                $nestedData['sub_total'] = number_format($return_purchase->total, config('decimal'));
+                $nestedData['unit_cost'] = number_format(($return_purchase->total / $return_purchase->qty), config('decimal'), ',', '.');
+                $nestedData['sub_total'] = number_format($return_purchase->total, config('decimal'), ',', '.');
                 $data[] = $nestedData;
             }
         }
@@ -1169,8 +1171,8 @@ class ProductController extends Controller
                 $nestedData['reference_no'] = $adjustment->reference_no;
                 $nestedData['warehouse'] = $adjustment->warehouse_name;
                 $nestedData['action'] = $adjustment->action == '-' ? 'Berkurang (Selisih Minus)' : 'Bertambah (Selisih Plus)';
-                $nestedData['qty'] = number_format($adjustment->qty, config('decimal'));
-                $nestedData['sub_total'] = number_format($adjustment->qty * $adjustment->unit_cost, config('decimal'));
+                $nestedData['qty'] = number_format($adjustment->qty, config('decimal'), ',', '.');
+                $nestedData['sub_total'] = number_format($adjustment->qty * $adjustment->unit_cost, config('decimal'), ',', '.');
                 $nestedData['note'] = $adjustment->note;
                 $data[] = $nestedData;
             }

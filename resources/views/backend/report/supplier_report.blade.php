@@ -137,7 +137,7 @@
                             <th></th>
                             <th></th>
                             <th></th>
-                            <th>{{number_format(0, $general_setting->decimal, '.', '')}}</th>
+                            <th>{{number_format(0, $general_setting->decimal, ',', '.')}}</th>
                         </tr>
                     </tfoot>
                 </table>
@@ -168,7 +168,7 @@
                             <th></th>
                             <th></th>
                             <th></th>
-                            <th>{{number_format(0, $general_setting->decimal, '.', '')}}</th>
+                            <th>{{number_format(0, $general_setting->decimal, ',', '.')}}</th>
                             <th></th>
                         </tr>
                     </tfoot>

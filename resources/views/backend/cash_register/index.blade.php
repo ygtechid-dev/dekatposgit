@@ -31,9 +31,9 @@
                     <td>{{$key}}</td>
                     <td>{{ $cash_register->user->name }}</td>
                     <td>{{ $cash_register->warehouse->name }}</td>
-                    <td>{{ number_format((float)$cash_register->cash_in_hand, $general_setting->decimal, '.', '') }}</td>
-                    <td>{{ $cash_register->deposit_amount !== null ? number_format((float)$cash_register->deposit_amount, $general_setting->decimal, '.', '') : 'N/A' }}</td>
-                    <td>{{ $cash_register->cash_difference !== null ? number_format((float)$cash_register->cash_difference, $general_setting->decimal, '.', '') : 'N/A' }}</td>
+                    <td>{{ number_format((float)$cash_register->cash_in_hand, $general_setting->decimal, ',', '.') }}</td>
+                    <td>{{ $cash_register->deposit_amount !== null ? number_format((float)$cash_register->deposit_amount, $general_setting->decimal, ',', '.') : 'N/A' }}</td>
+                    <td>{{ $cash_register->cash_difference !== null ? number_format((float)$cash_register->cash_difference, $general_setting->decimal, ',', '.') : 'N/A' }}</td>
                     <td>{{ date($general_setting->date_format . " h:i:s", strtotime($cash_register->created_at)) }}</td>
                     @if($cash_register->status)
                         <td>N/A</td>
@@ -194,7 +194,9 @@
 
     function money(value) {
         value = parseFloat(value || 0);
-        return value.toFixed({{$general_setting->decimal}});
+        var parts = value.toFixed({{$general_setting->decimal}}).split(".");
+        parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ".");
+        return parts.length > 1 ? parts.join(",") : parts[0];
     }
 
     $(".register-details-btn").on("click", function () {

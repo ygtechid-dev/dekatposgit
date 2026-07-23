@@ -88,8 +88,8 @@
                                                     <th></th>
                                                     <th id="total-qty">0</th>
                                                     <th></th>
-                                                    <th id="total-tax">{{number_format(0, $general_setting->decimal, '.', '')}}</th>
-                                                    <th id="total">{{number_format(0, $general_setting->decimal, '.', '')}}</th>
+                                                    <th id="total-tax">{{number_format(0, $general_setting->decimal, ',', '.')}}</th>
+                                                    <th id="total">{{number_format(0, $general_setting->decimal, ',', '.')}}</th>
                                                     <th><i class="dripicons-trash"></i></th>
                                                 </tfoot>
                                             </table>
@@ -173,16 +173,16 @@
     <div class="container-fluid">
         <table class="table table-bordered table-condensed totals">
             <td><strong>{{trans('file.Items')}}</strong>
-                <span class="pull-right" id="item">{{number_format(0, $general_setting->decimal, '.', '')}}</span>
+                <span class="pull-right" id="item">{{number_format(0, $general_setting->decimal, ',', '.')}}</span>
             </td>
             <td><strong>{{trans('file.Total')}}</strong>
-                <span class="pull-right" id="subtotal">{{number_format(0, $general_setting->decimal, '.', '')}}</span>
+                <span class="pull-right" id="subtotal">{{number_format(0, $general_setting->decimal, ',', '.')}}</span>
             </td>
             <td><strong>{{trans('file.Shipping Cost')}}</strong>
-                <span class="pull-right" id="shipping_cost">{{number_format(0, $general_setting->decimal, '.', '')}}</span>
+                <span class="pull-right" id="shipping_cost">{{number_format(0, $general_setting->decimal, ',', '.')}}</span>
             </td>
             <td><strong>{{trans('file.grand total')}}</strong>
-                <span class="pull-right" id="grand_total">{{number_format(0, $general_setting->decimal, '.', '')}}</span>
+                <span class="pull-right" id="grand_total">{{number_format(0, $general_setting->decimal, ',', '.')}}</span>
             </td>
         </table>
     </div>
@@ -591,7 +591,7 @@ function calculateGrandTotal() {
     var shipping_cost = parseFloat($('input[name="shipping_cost"]').val());
 
     if (!shipping_cost)
-        shipping_cost = {{number_format(0, $general_setting->decimal, '.', '')}};
+        shipping_cost = {{number_format(0, $general_setting->decimal, ',', '.')}};
 
     item = ++item + '(' + total_qty + ')';
 

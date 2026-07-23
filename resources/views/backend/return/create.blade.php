@@ -80,10 +80,10 @@
                                                             <input type="hidden" name="actual_qty[]" class="actual-qty" value="{{$product_sale->qty - $product_sale->return_qty}}">
                                                             <input type="number" class="form-control qty" name="qty[]" value="{{$product_sale->qty - $product_sale->return_qty}}" required step="any" max="{{$product_sale->qty - $product_sale->return_qty}}" />
                                                         </td>
-                                                        <td class="net_unit_price">{{ number_format((float)$product_sale->net_unit_price, $general_setting->decimal, '.', '')}} </td>
-                                                        <td class="discount">{{ number_format((float)$product_sale->discount, $general_setting->decimal, '.', '')}}</td>
-                                                        <td class="tax">{{ number_format((float)$product_sale->tax, $general_setting->decimal, '.', '')}}</td>
-                                                        <td class="sub-total">{{ number_format((float)$product_sale->total, $general_setting->decimal, '.', '')}}</td>
+                                                        <td class="net_unit_price">{{ number_format((float)$product_sale->net_unit_price, $general_setting->decimal, ',', '.')}} </td>
+                                                        <td class="discount">{{ number_format((float)$product_sale->discount, $general_setting->decimal, ',', '.')}}</td>
+                                                        <td class="tax">{{ number_format((float)$product_sale->tax, $general_setting->decimal, ',', '.')}}</td>
+                                                        <td class="sub-total">{{ number_format((float)$product_sale->total, $general_setting->decimal, ',', '.')}}</td>
                                                         <td><input type="checkbox" class="is-return" name="is_return[]" value="{{$product_data->id}}"></td>
                                                         <input type="hidden" class="product-code" name="product_code[]" value="{{$product_data->code}}"/>
                                                         <input type="hidden" name="product_id[]" class="product-id" value="{{$product_data->id}}"/>
@@ -198,16 +198,16 @@
     <div class="container-fluid">
         <table class="table table-bordered table-condensed totals">
             <td><strong>{{trans('file.Items')}}</strong>
-                <span class="pull-right" id="item">{{number_format(0, $general_setting->decimal, '.', '')}}</span>
+                <span class="pull-right" id="item">{{number_format(0, $general_setting->decimal, ',', '.')}}</span>
             </td>
             <td><strong>{{trans('file.Total')}}</strong>
-                <span class="pull-right" id="subtotal">{{number_format(0, $general_setting->decimal, '.', '')}}</span>
+                <span class="pull-right" id="subtotal">{{number_format(0, $general_setting->decimal, ',', '.')}}</span>
             </td>
             <td><strong>{{trans('file.Order Tax')}}</strong>
-                <span class="pull-right" id="order_tax">{{number_format(0, $general_setting->decimal, '.', '')}}</span>
+                <span class="pull-right" id="order_tax">{{number_format(0, $general_setting->decimal, ',', '.')}}</span>
             </td>
             <td><strong>{{trans('file.grand total')}}</strong>
-                <span class="pull-right" id="grand_total">{{number_format(0, $general_setting->decimal, '.', '')}}</span>
+                <span class="pull-right" id="grand_total">{{number_format(0, $general_setting->decimal, ',', '.')}}</span>
             </td>
         </table>
     </div>

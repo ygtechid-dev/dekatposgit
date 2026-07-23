@@ -242,11 +242,11 @@ class PurchaseController extends Controller
                 else
                     $nestedData['payment_status'] = '<div class="badge badge-success">'.trans('file.Paid').'</div>';
 
-                $nestedData['grand_total'] = number_format($purchase->grand_total, config('decimal'));
+                $nestedData['grand_total'] = number_format($purchase->grand_total, config('decimal'), ',', '.');
                 $returned_amount = DB::table('return_purchases')->where('purchase_id', $purchase->id)->sum('grand_total');
-                $nestedData['returned_amount'] = number_format($returned_amount, config('decimal'));
-                $nestedData['paid_amount'] = number_format($purchase->paid_amount, config('decimal'));
-                $nestedData['due'] = number_format($purchase->grand_total- $returned_amount  - $purchase->paid_amount, config('decimal'));
+                $nestedData['returned_amount'] = number_format($returned_amount, config('decimal'), ',', '.');
+                $nestedData['paid_amount'] = number_format($purchase->paid_amount, config('decimal'), ',', '.');
+                $nestedData['due'] = number_format($purchase->grand_total- $returned_amount  - $purchase->paid_amount, config('decimal'), ',', '.');
                 //fetching custom fields data
                 foreach($field_names as $field_name) {
                     $nestedData[$field_name] = $purchase->$field_name;
@@ -360,6 +360,43 @@ class PurchaseController extends Controller
                 ->get();
     }
 
+    public function productSuggestions(Request $request)
+    {
+        $term = trim($request->input('term', $request->input('data', '')));
+        if ($term === '') {
+            return response()->json([]);
+        }
+
+        $withoutVariant = Product::where('is_active', true)
+            ->whereNull('is_variant')
+            ->where(function ($query) use ($term) {
+                $query->where('code', 'LIKE', "%{$term}%")
+                    ->orWhere('name', 'LIKE', "%{$term}%");
+            })
+            ->select('code', 'name')
+            ->limit(15)
+            ->get()
+            ->map(function ($product) {
+                return $product->code . '|' . $product->name;
+            });
+
+        $withVariant = Product::join('product_variants', 'products.id', 'product_variants.product_id')
+            ->where('products.is_active', true)
+            ->whereNotNull('is_variant')
+            ->where(function ($query) use ($term) {
+                $query->where('product_variants.item_code', 'LIKE', "%{$term}%")
+                    ->orWhere('products.name', 'LIKE', "%{$term}%");
+            })
+            ->select('products.name', 'product_variants.item_code')
+            ->limit(15)
+            ->get()
+            ->map(function ($product) {
+                return $product->item_code . '|' . $product->name;
+            });
+
+        return response()->json($withoutVariant->concat($withVariant)->take(20)->values());
+    }
+
     public function limsProductSearch(Request $request)
     {
         $product_code = explode("|", $request['data']);
@@ -371,12 +408,6 @@ class PurchaseController extends Controller
                             ->whereNull('is_variant')
                             ->first();
         if(!$lims_product_data) {
-            $lims_product_data = Product::where([
-                                ['name', $product_code[1]],
-                                ['is_active', true]
-                            ])
-                            ->whereNotNull(['is_variant'])
-                            ->first();
             $lims_product_data = Product::join('product_variants', 'products.id', 'product_variants.product_id')
                 ->where([
                     ['product_variants.item_code', $product_code[0]],
@@ -385,6 +416,9 @@ class PurchaseController extends Controller
                 ->whereNotNull('is_variant')
                 ->select('products.*', 'product_variants.item_code', 'product_variants.additional_cost')
                 ->first();
+            if (!$lims_product_data) {
+                return response()->json(['message' => 'Produk tidak ditemukan'], 404);
+            }
             $lims_product_data->cost += $lims_product_data->additional_cost;
         }
         $product[] = $lims_product_data->name;
@@ -467,6 +501,16 @@ class PurchaseController extends Controller
         else
             $data['created_at'] = date("Y-m-d H:i:s");
         //return dd($data);
+        // Jaga-jaga: kolom-kolom angka ini wajib diisi (NOT NULL) di database.
+        // Kadang field hidden di form (total_qty, dll) terkirim kosong/null
+        // karena race condition di JS saat kalkulasi belum sempat jalan sebelum
+        // submit, yang tadinya bikin error "Column 'total_qty' cannot be null".
+        // Default-kan ke 0 di sini supaya penyimpanan pembelian tidak gagal.
+        foreach (['total_qty', 'total_discount', 'total_tax', 'total_cost', 'order_tax', 'order_discount', 'shipping_cost', 'grand_total', 'paid_amount', 'exchange_rate'] as $numeric_field) {
+            if (!isset($data[$numeric_field]) || $data[$numeric_field] === '' || $data[$numeric_field] === null || strtolower((string)$data[$numeric_field]) === 'nan') {
+                $data[$numeric_field] = 0;
+            }
+        }
         // Wrapped in a transaction so a mid-loop failure (bad unit/batch/rack
         // data on one product line, etc.) can never leave a half-saved
         // purchase - either the whole purchase (header + every line + stock
@@ -1125,6 +1169,18 @@ class PurchaseController extends Controller
             return response()->json(['error' => $e->getMessage()]);
         }
         $lims_purchase_data->update($data);
+
+        // Jurnal otomatis: edit pembelian (ubah item/harga) bisa mengubah
+        // grand_total, jadi jurnal 'purchase' lama dihapus lalu diposting
+        // ulang dengan angka terbaru - sama seperti alur di store().
+        try {
+            JournalService::reverseForReference('purchase', $lims_purchase_data->id);
+            $persediaan_id = JournalService::accountIdByCode(JournalService::PERSEDIAAN);
+            $hutang_id = JournalService::accountIdByCode(JournalService::HUTANG_USAHA);
+            JournalService::postSimple($lims_purchase_data->created_at, 'Pembelian ' . $lims_purchase_data->reference_no, $persediaan_id, $hutang_id, $lims_purchase_data->grand_total, 'purchase', $lims_purchase_data->id);
+        } catch (\Exception $e) {
+            // Jangan sampai kegagalan posting jurnal membatalkan update purchase itu sendiri.
+        }
         //inserting data for custom fields
         $custom_field_data = [];
         $custom_fields = CustomField::where('belongs_to', 'purchase')->select('name', 'type')->get();

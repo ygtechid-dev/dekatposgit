@@ -111,6 +111,8 @@
     var product_name = [];
     var product_qty = [];
     var unit_cost = [];
+    var product_rack_id = [];
+    var product_rack_name = [];
     var lims_rack_array = [];
     var rackBaseUrl = "{{url('racks/warehouse')}}";
 
@@ -122,41 +124,36 @@
 
 	$('select[name="warehouse_id"]').on('change', function() {
 	    var id = $(this).val();
-	    $.get('getproduct/' + id, function(data) {
+	    $.get("{{url('qty_adjustment/getproduct')}}/" + id, function(data) {
 	        lims_product_array = [];
 	        product_code = data[0];
 	        product_name = data[1];
 	        product_qty = data[2];
 	        unit_cost = data[3];
+	        product_rack_id = data[4] || [];
+	        product_rack_name = data[5] || [];
 	        $.each(product_code, function(index) {
 	            lims_product_array.push(product_code[index] + ' (' + product_name[index] + ')' + '|' + unit_cost[index]);
 	        });
 	    });
 	    if(id) {
+	        // lims_rack_array dipakai hanya sebagai penanda "gudang/toko ini
+	        // pakai rak atau tidak" - daftar barang yang dipakai user (pool
+	        // pencarian) sudah difilter di server (getProduct) supaya hanya
+	        // barang yang sudah di-plan ke rak yang muncul. Tunggu dulu supaya
+	        // tidak ada race condition dengan pool produk yang juga sedang dimuat.
+	        lims_rack_array = [];
+	        lims_productcodeSearch.prop('disabled', true).attr('placeholder', 'Memuat daftar rak...');
 	        $.get(rackBaseUrl + '/' + id, function(data) {
 	            lims_rack_array = data;
-	            $('.rack-select').each(function() {
-	                populateRackOptions($(this));
-	            });
+	        }).always(function() {
+	            lims_productcodeSearch.prop('disabled', false).attr('placeholder', 'Please type product code and select...');
 	        });
 	    }
 	    else {
 	        lims_rack_array = [];
 	    }
 	});
-
-	function populateRackOptions($select) {
-	    var current = $select.val();
-	    var html = '<option value="">-</option>';
-	    $.each(lims_rack_array, function(i, rack) {
-	        html += '<option value="' + rack.id + '">' + rack.name + '</option>';
-	    });
-	    $select.html(html);
-	    if(current) $select.val(current);
-	    // Rak is only mandatory when the selected gudang/toko actually has
-	    // racks configured - warehouses that don't use racks stay optional.
-	    $select.prop('required', lims_rack_array.length > 0);
-	}
 
 	var lims_productcodeSearch = $('#lims_productcodeSearch');
 
@@ -217,16 +214,23 @@
 	        e.preventDefault();
 	        return;
 	    }
-	    if (lims_rack_array.length && $('.rack-select').filter(function() { return !$(this).val(); }).length) {
-	        alert('Gudang/toko ini menggunakan rak - pilih rak untuk setiap barang di tabel penyesuaian.');
-	        e.preventDefault();
-	    }
 	});
+
+    function rackSelectHtml(selectedRackId) {
+        var html = '<select class="form-control rack-select" name="rack_id[]">';
+        html += '<option value="">- Pilih Rak -</option>';
+        $.each(lims_rack_array, function(i, rack) {
+            var selected = selectedRackId && selectedRackId == rack.id ? ' selected' : '';
+            html += '<option value="' + rack.id + '"' + selected + '>' + rack.name + '</option>';
+        });
+        html += '</select>';
+        return html;
+    }
 
 	function productSearch(data){
 		$.ajax({
             type: 'GET',
-            url: 'lims_product_search',
+            url: "{{route('product_adjustment.search')}}",
             data: {
                 data: data
             },
@@ -246,12 +250,23 @@
                 if(flag){
                     var pos = product_code.indexOf(data[1]);
                     var system_qty = (pos > -1) ? product_qty[pos] : 0;
+                    // Rak ikut otomatis dari plan yang sudah ada (Plan Toko/Plan
+                    // Gudang) - sama seperti gudang, bukan dipilih bebas di sini.
+                    // Barang yang belum di-plan ke rak sudah difilter di server
+                    // (lihat AdjustmentController::getProduct), jadi kalau gudang
+                    // ini pakai rak tapi barangnya tidak ketemu di pool, tolak.
+                    if (lims_rack_array.length && (pos === -1 || !product_rack_id[pos])) {
+                        alert('Barang ini belum di-plan ke rak manapun. Plan dulu lewat menu Plan Toko/Plan Gudang sebelum bisa disesuaikan.');
+                        return;
+                    }
+                    var rackId = (pos > -1 && product_rack_id[pos]) ? product_rack_id[pos] : '';
+                    var rackName = (pos > -1 && product_rack_name[pos]) ? product_rack_name[pos] : '-';
 
                     var newRow = $("<tr>");
                     var cols = '';
                     cols += '<td>' + data[0] + '</td>';
                     cols += '<td>' + data[1] + '</td>';
-                    cols += '<td><select name="rack_id[]" class="form-control rack-select"><option value="">-</option></select></td>';
+                    cols += '<td>' + (lims_rack_array.length ? rackSelectHtml(rackId) : rackName + '<input type="hidden" name="rack_id[]" value="' + rackId + '"/>') + '</td>';
                     cols += '<td class="stock-system-cell">' + system_qty + '</td>';
                     cols += '<td><input type="number" class="form-control stock-fisik" value="' + system_qty + '" required step="any" /></td>';
                     cols += '<td class="difference-cell">0</td>';
@@ -265,7 +280,6 @@
 
                     newRow.append(cols);
                     $("table.order-list tbody").append(newRow);
-                    populateRackOptions(newRow.find('.rack-select'));
                     calculateTotal();
                 }
             }

@@ -134,9 +134,11 @@
                                     @endforeach
                                     <div class="col-md-12 mt-3">
                                         <label>{{trans('file.Select Product')}}</label>
-                                        <div class="search-box input-group">
+                                        <div class="search-box input-group position-relative">
                                             <button type="button" class="btn btn-secondary"><i class="fa fa-barcode"></i></button>
-                                            <input type="text" name="product_code_name" id="lims_productcodeSearch" placeholder="Please type product code and select..." class="form-control" />
+                                            <input type="text" name="product_code_name" id="lims_productcodeSearch" list="purchase-product-datalist" placeholder="Please type product code and select..." class="form-control" />
+                                            <datalist id="purchase-product-datalist"></datalist>
+                                            <div id="purchase-product-suggestions" class="list-group position-absolute w-100" style="top:100%; left:0; z-index:99999; display:none;"></div>
                                         </div>
                                     </div>
                                 </div>
@@ -240,9 +242,9 @@
                                                         </td>
                                                         @endif
                                                         <td><input type="number" step="any" class="form-control net_unit_cost" name="net_unit_cost[]" value="{{ number_format((float)$product_purchase->net_unit_cost, $general_setting->decimal, '.', '')}}" /></td>
-                                                        <td class="discount">{{ number_format((float)$product_purchase->discount, $general_setting->decimal, '.', '')}}</td>
-                                                        <td class="tax">{{ number_format((float)$product_purchase->tax, $general_setting->decimal, '.', '')}}</td>
-                                                        <td class="sub-total">{{ number_format((float)$product_purchase->total, $general_setting->decimal, '.', '')}}</td>
+                                                        <td class="discount">{{ number_format((float)$product_purchase->discount, $general_setting->decimal, ',', '.')}}</td>
+                                                        <td class="tax">{{ number_format((float)$product_purchase->tax, $general_setting->decimal, ',', '.')}}</td>
+                                                        <td class="sub-total">{{ number_format((float)$product_purchase->total, $general_setting->decimal, ',', '.')}}</td>
                                                         <td><button type="button" class="ibtnDel btn btn-md btn-danger">{{trans("file.delete")}}</button></td>
                                                         <input type="hidden" class="product-id" name="product_id[]" value="{{$product_data->id}}"/>
                                                         <input type="hidden" class="product-code" name="product_code[]" value="{{$product_data->code}}"/>
@@ -272,9 +274,9 @@
                                                     <th></th>
                                                     <th></th>
                                                     <th class="recieved-product-qty d-none"></th>
-                                                    <th id="total-discount">{{ number_format((float)$lims_purchase_data->total_discount, $general_setting->decimal, '.', '')}}</th>
-                                                    <th id="total-tax">{{ number_format((float)$lims_purchase_data->total_tax, $general_setting->decimal, '.', '')}}</th>
-                                                    <th id="total">{{ number_format((float)$lims_purchase_data->total_cost, $general_setting->decimal, '.', '')}}</th>
+                                                    <th id="total-discount">{{ number_format((float)$lims_purchase_data->total_discount, $general_setting->decimal, ',', '.')}}</th>
+                                                    <th id="total-tax">{{ number_format((float)$lims_purchase_data->total_tax, $general_setting->decimal, ',', '.')}}</th>
+                                                    <th id="total">{{ number_format((float)$lims_purchase_data->total_cost, $general_setting->decimal, ',', '.')}}</th>
                                                     <th><i class="dripicons-trash"></i></th>
                                                 </tfoot>
                                             </table>
@@ -367,22 +369,22 @@
     <div class="container-fluid">
         <table class="table table-bordered table-condensed totals">
             <td><strong>{{trans('file.Items')}}</strong>
-                <span class="pull-right" id="item">{{number_format(0, $general_setting->decimal, '.', '')}}</span>
+                <span class="pull-right" id="item">{{number_format(0, $general_setting->decimal, ',', '.')}}</span>
             </td>
             <td><strong>{{trans('file.Total')}}</strong>
-                <span class="pull-right" id="subtotal">{{number_format(0, $general_setting->decimal, '.', '')}}</span>
+                <span class="pull-right" id="subtotal">{{number_format(0, $general_setting->decimal, ',', '.')}}</span>
             </td>
             <td><strong>{{trans('file.Order Tax')}}</strong>
-                <span class="pull-right" id="order_tax">{{number_format(0, $general_setting->decimal, '.', '')}}</span>
+                <span class="pull-right" id="order_tax">{{number_format(0, $general_setting->decimal, ',', '.')}}</span>
             </td>
             <td><strong>{{trans('file.Order Discount')}}</strong>
-                <span class="pull-right" id="order_discount">{{number_format(0, $general_setting->decimal, '.', '')}}</span>
+                <span class="pull-right" id="order_discount">{{number_format(0, $general_setting->decimal, ',', '.')}}</span>
             </td>
             <td><strong>{{trans('file.Shipping Cost')}}</strong>
-                <span class="pull-right" id="shipping_cost">{{number_format(0, $general_setting->decimal, '.', '')}}</span>
+                <span class="pull-right" id="shipping_cost">{{number_format(0, $general_setting->decimal, ',', '.')}}</span>
             </td>
             <td><strong>{{trans('file.grand total')}}</strong>
-                <span class="pull-right" id="grand_total">{{number_format(0, $general_setting->decimal, '.', '')}}</span>
+                <span class="pull-right" id="grand_total">{{number_format(0, $general_setting->decimal, ',', '.')}}</span>
             </td>
         </table>
     </div>
@@ -559,13 +561,88 @@ var lims_product_code = [
 ];
 
     var lims_productcodeSearch = $('#lims_productcodeSearch');
+    var purchaseSuggestionUrl = "{{url('purchases/product_suggestions')}}";
+    var $purchaseSuggestions = $('#purchase-product-suggestions');
+    var $purchaseDataList = $('#purchase-product-datalist');
+    var currentPurchaseSuggestions = [];
+
+    function localPurchaseSuggestions(term) {
+        var matcher = new RegExp($.ui.autocomplete.escapeRegex(term), "i");
+        return $.grep(lims_product_code, function(item) {
+            return matcher.test(item);
+        }).slice(0, 20);
+    }
+
+    function renderPurchaseSuggestions(items) {
+        currentPurchaseSuggestions = items || [];
+        $purchaseDataList.empty();
+        $.each(currentPurchaseSuggestions, function(i, item) {
+            $purchaseDataList.append('<option value="' + $('<div/>').text(item).html() + '">' + item.replace('|', ' - ') + '</option>');
+        });
+        if (!items || !items.length) {
+            $purchaseSuggestions.hide().empty();
+            return;
+        }
+        var html = '';
+        $.each(items, function(i, item) {
+            html += '<button type="button" class="list-group-item list-group-item-action purchase-suggestion-item" data-value="' + $('<div/>').text(item).html() + '">' + item.replace('|', ' - ') + '</button>';
+        });
+        $purchaseSuggestions.html(html).show();
+    }
+
+    lims_productcodeSearch.on('input', function() {
+        var term = $(this).val();
+        if (term.length < 1) {
+            $purchaseSuggestions.hide().empty();
+            return;
+        }
+        $.get(purchaseSuggestionUrl, { term: term }, function(items) {
+            renderPurchaseSuggestions(items && items.length ? items : localPurchaseSuggestions(term));
+        }).fail(function() {
+            renderPurchaseSuggestions(localPurchaseSuggestions(term));
+        });
+    });
+
+    lims_productcodeSearch.on('change', function() {
+        var selected = $(this).val();
+        if (currentPurchaseSuggestions.indexOf(selected) !== -1) {
+            $(this).val('');
+            $purchaseSuggestions.hide().empty();
+            productSearch(selected);
+        }
+    });
+
+    lims_productcodeSearch.on('keydown', function(e) {
+        if (e.key === 'Enter' && currentPurchaseSuggestions.length) {
+            e.preventDefault();
+            var selected = currentPurchaseSuggestions[0];
+            $(this).val('');
+            $purchaseSuggestions.hide().empty();
+            productSearch(selected);
+        }
+    });
+
+    $purchaseSuggestions.on('mousedown', '.purchase-suggestion-item', function(e) {
+        e.preventDefault();
+        var data = $(this).data('value');
+        lims_productcodeSearch.val('');
+        $purchaseSuggestions.hide().empty();
+        productSearch(data);
+    });
+
+    $(document).on('click', function(e) {
+        if (!$(e.target).closest('.search-box').length) {
+            $purchaseSuggestions.hide();
+        }
+    });
 
     lims_productcodeSearch.autocomplete({
     source: function(request, response) {
-        var matcher = new RegExp(".?" + $.ui.autocomplete.escapeRegex(request.term), "i");
-        response($.grep(lims_product_code, function(item) {
-            return matcher.test(item);
-        }));
+        $.get(purchaseSuggestionUrl, { term: request.term }, function(items) {
+            response(items && items.length ? items : localPurchaseSuggestions(request.term));
+        }).fail(function() {
+            response(localPurchaseSuggestions(request.term));
+        });
     },
     response: function(event, ui) {
         if (ui.content.length == 1) {
@@ -714,7 +791,7 @@ $('button[name="update_btn"]').on("click", function() {
 function productSearch(data) {
     $.ajax({
         type: 'GET',
-        url: '../lims_product_search',
+        url: "{{route('product_purchase.search')}}",
         data: {
             data: data
         },
@@ -755,7 +832,7 @@ function productSearch(data) {
                     cols += '<td><input type="text" class="form-control expired-date" name="expired_date[]" disabled/></td>';
                 }
                 cols += '<td><input type="number" step="any" class="form-control net_unit_cost" name="net_unit_cost[]" /></td>';
-                cols += '<td class="discount">{{number_format(0, $general_setting->decimal, '.', '')}}</td>';
+                cols += '<td class="discount">{{number_format(0, $general_setting->decimal, ',', '.')}}</td>';
                 cols += '<td class="tax"></td>';
                 cols += '<td class="sub-total"></td>';
                 cols += '<td><button type="button" class="ibtnDel btn btn-md btn-danger">{{trans("file.delete")}}</button></td>';

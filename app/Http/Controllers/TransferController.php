@@ -159,9 +159,9 @@ class TransferController extends Controller
                 $nestedData['reference_no'] = $transfer->reference_no;
                 $nestedData['from_warehouse'] = $transfer->fromWarehouse->name;
                 $nestedData['to_warehouse'] = $transfer->toWarehouse->name;
-                $nestedData['total_cost'] = number_format($transfer->total_cost, config('decimal'));
-                $nestedData['total_tax'] = number_format($transfer->total_tax, config('decimal'));
-                $nestedData['grand_total'] = number_format($transfer->grand_total, config('decimal'));
+                $nestedData['total_cost'] = number_format($transfer->total_cost, config('decimal'), ',', '.');
+                $nestedData['total_tax'] = number_format($transfer->total_tax, config('decimal'), ',', '.');
+                $nestedData['grand_total'] = number_format($transfer->grand_total, config('decimal'), ',', '.');
                 
                 if($transfer->is_sent == 1) {
                     $nestedData['is_sent'] = '<div class="badge badge-success">'.trans('file.Yes').'</div>';

@@ -129,7 +129,7 @@
                                 $sold_qty += $product_sale->qty;
                         }
                     ?>
-                    <td>{{number_format((float)$sold_price, $general_setting->decimal, '.', '')}}</td>
+                    <td>{{number_format((float)$sold_price, $general_setting->decimal, ',', '.')}}</td>
                     <td>{{$sold_qty}}</td>
                     <td>{{$product_qty[$key]}}</td>
                 </tr>
@@ -139,7 +139,7 @@
             <tfoot>
                 <th></th>
                 <th>Total</th>
-                <th>{{number_format(0, $general_setting->decimal, '.', '')}}</th>
+                <th>{{number_format(0, $general_setting->decimal, ',', '.')}}</th>
                 <th>0</th>
                 <th>0</th>
             </tfoot>

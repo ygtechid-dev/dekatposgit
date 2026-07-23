@@ -97,6 +97,71 @@ class RackPlanController extends Controller
         return response()->json($rows);
     }
 
+    public function rackOptions($warehouse_id)
+    {
+        if (!$this->checkAccess())
+            return response()->json(['message' => 'Sorry! You are not allowed to access this module'], 403);
+
+        $warehouse = Warehouse::find($warehouse_id);
+        $racks = Rack::where('warehouse_id', $warehouse_id)
+            ->where(function ($query) {
+                $query->where('is_active', true)
+                    ->orWhereNull('is_active');
+            })
+            ->orderBy('name')
+            ->get(['id', 'name', 'warehouse_id']);
+
+        if ($racks->isEmpty() && $warehouse) {
+            $sameNameWarehouseIds = Warehouse::where('name', $warehouse->name)
+                ->pluck('id')
+                ->toArray();
+
+            $racks = Rack::whereIn('warehouse_id', $sameNameWarehouseIds)
+                ->where(function ($query) {
+                    $query->where('is_active', true)
+                        ->orWhereNull('is_active');
+                })
+                ->orderBy('name')
+                ->get(['id', 'name', 'warehouse_id']);
+        }
+
+        return response()->json($racks);
+    }
+
+    public function getProductPool($warehouse_id)
+    {
+        if (!$this->checkAccess())
+            return response()->json(['message' => 'Sorry! You are not allowed to access this module'], 403);
+
+        $simpleProducts = Product::where([
+                ['is_active', true],
+                ['type', 'standard']
+            ])
+            ->whereNull('is_variant')
+            ->select('id', 'name', 'code', 'cost')
+            ->orderBy('name')
+            ->get();
+
+        $variantProducts = Product::join('product_variants', 'products.id', '=', 'product_variants.product_id')
+            ->where([
+                ['products.is_active', true],
+                ['products.type', 'standard']
+            ])
+            ->whereNotNull('products.is_variant')
+            ->select('products.id', 'products.name', 'product_variants.item_code as code', DB::raw('(products.cost + product_variants.additional_cost) as cost'))
+            ->orderBy('products.name')
+            ->get();
+
+        $products = $simpleProducts->concat($variantProducts);
+
+        return response()->json([
+            $products->pluck('code')->values(),
+            $products->pluck('name')->values(),
+            [],
+            $products->pluck('cost')->values(),
+        ]);
+    }
+
     /**
      * Assign (or move) a product into a rack for a warehouse. Creates the
      * product_warehouse row (qty 0) if the product isn't stocked there yet.

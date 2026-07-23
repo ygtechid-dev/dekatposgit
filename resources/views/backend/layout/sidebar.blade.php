@@ -38,7 +38,6 @@
                 @endif
                 @if($adjustment_active)
                 <li id="adjustment-list-menu"><a href="{{route('qty_adjustment.index')}}">{{trans('file.Adjustment List')}}</a></li>
-                <li id="adjustment-create-menu"><a href="{{route('qty_adjustment.create')}}">{{trans('file.Add Adjustment')}}</a></li>
                 @endif
                 @if($rack_plan_active)
                 <li id="plan-toko-menu"><a href="{{route('rack.planToko')}}">Plan Toko</a></li>
@@ -61,7 +60,6 @@
                 $add_permission_active = $role_has_permissions_list->where('name', 'purchases-add')->first();
                 ?>
                 @if($add_permission_active)
-                <li id="purchase-create-menu"><a href="{{route('purchases.create')}}">{{trans('file.Add Purchase')}}</a></li>
                 <li id="purchase-import-menu"><a href="{{url('purchases/purchase_by_csv')}}">{{trans('file.Import Purchase By CSV')}}</a></li>
                 @endif
             </ul>
@@ -104,6 +102,8 @@
             </li>
             @endif
 
+            <li id="cash-register-menu"><a href="{{route('cashRegister.index')}}"> <i class="dripicons-wallet"></i><span>Cash Register</span></a></li>
+
             <?php
             $index_permission_active = $role_has_permissions_list->where('name', 'quotes-index')->first();
             ?>
@@ -115,7 +115,6 @@
                 $add_permission_active = $role_has_permissions_list->where('name', 'quotes-add')->first();
                 ?>
                 @if($add_permission_active)
-                <li id="quotation-create-menu"><a href="{{route('quotations.create')}}">{{trans('file.Add Quotation')}}</a></li>
                 @endif
             </ul>
             </li>
@@ -131,7 +130,6 @@
                 $add_permission_active = $role_has_permissions_list->where('name', 'transfers-add')->first();
                 ?>
                 @if($add_permission_active)
-                <li id="transfer-create-menu"><a href="{{route('transfers.create')}}">{{trans('file.Add Transfer')}}</a></li>
                 <li id="transfer-import-menu"><a href="{{url('transfers/transfer_by_csv')}}">{{trans('file.Import Transfer By CSV')}}</a></li>
                 @endif
             </ul>
@@ -280,6 +278,7 @@
                 @if($customer_add_permission_active)
                 <li id="customer-create-menu"><a href="{{route('customer.create')}}">{{trans('file.Add Customer')}}</a></li>
                 @endif
+                <li id="customer-due-payment-menu"><a href="{{route('customer.duePayment')}}">Pembayaran Piutang</a></li>
                 @endif
 
                 @if($biller_index_permission_active)

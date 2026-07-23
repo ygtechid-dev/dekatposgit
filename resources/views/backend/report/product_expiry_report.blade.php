@@ -40,7 +40,7 @@
                         <div class="badge badge-warning">{{date($general_setting->date_format, strtotime($product->expired_date))}}</div>
                     </td>
                     @endif
-                    <td>{{number_format((float)($product->qty), $general_setting->decimal, '.', '')}}</td>
+                    <td>{{number_format((float)($product->qty), $general_setting->decimal, ',', '.')}}</td>
                 </tr>
                 @endforeach
             </tbody>

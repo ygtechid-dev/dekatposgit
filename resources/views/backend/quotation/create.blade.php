@@ -91,9 +91,9 @@
                                                     <th></th>
 		                                            <th id="total-qty">0</th>
 		                                            <th></th>
-		                                            <th id="total-discount">{{number_format(0, $general_setting->decimal, '.', '')}}</th>
-		                                            <th id="total-tax">{{number_format(0, $general_setting->decimal, '.', '')}}</th>
-		                                            <th id="total">{{number_format(0, $general_setting->decimal, '.', '')}}</th>
+		                                            <th id="total-discount">{{number_format(0, $general_setting->decimal, ',', '.')}}</th>
+		                                            <th id="total-tax">{{number_format(0, $general_setting->decimal, ',', '.')}}</th>
+		                                            <th id="total">{{number_format(0, $general_setting->decimal, ',', '.')}}</th>
 		                                            <th><i class="dripicons-trash"></i></th>
 		                                        </tfoot>
 		                                    </table>
@@ -204,22 +204,22 @@
     <div class="container-fluid">
         <table class="table table-bordered table-condensed totals">
             <td><strong>{{trans('file.Items')}}</strong>
-                <span class="pull-right" id="item">{{number_format(0, $general_setting->decimal, '.', '')}}</span>
+                <span class="pull-right" id="item">{{number_format(0, $general_setting->decimal, ',', '.')}}</span>
             </td>
             <td><strong>{{trans('file.Total')}}</strong>
-                <span class="pull-right" id="subtotal">{{number_format(0, $general_setting->decimal, '.', '')}}</span>
+                <span class="pull-right" id="subtotal">{{number_format(0, $general_setting->decimal, ',', '.')}}</span>
             </td>
             <td><strong>{{trans('file.Order Tax')}}</strong>
-                <span class="pull-right" id="order_tax">{{number_format(0, $general_setting->decimal, '.', '')}}</span>
+                <span class="pull-right" id="order_tax">{{number_format(0, $general_setting->decimal, ',', '.')}}</span>
             </td>
             <td><strong>{{trans('file.Order Discount')}}</strong>
-                <span class="pull-right" id="order_discount">{{number_format(0, $general_setting->decimal, '.', '')}}</span>
+                <span class="pull-right" id="order_discount">{{number_format(0, $general_setting->decimal, ',', '.')}}</span>
             </td>
             <td><strong>{{trans('file.Shipping Cost')}}</strong>
-                <span class="pull-right" id="shipping_cost">{{number_format(0, $general_setting->decimal, '.', '')}}</span>
+                <span class="pull-right" id="shipping_cost">{{number_format(0, $general_setting->decimal, ',', '.')}}</span>
             </td>
             <td><strong>{{trans('file.grand total')}}</strong>
-                <span class="pull-right" id="grand_total">{{number_format(0, $general_setting->decimal, '.', '')}}</span>
+                <span class="pull-right" id="grand_total">{{number_format(0, $general_setting->decimal, ',', '.')}}</span>
             </td>
         </table>
     </div>
@@ -557,7 +557,7 @@ function productSearch(data){
                     cols += '<td><input type="text" class="form-control batch-no" disabled/> <input type="hidden" class="product-batch-id" name="product_batch_id[]"/> </td>';
                 cols += '<td><input type="number" class="form-control qty" name="qty[]" value="1" step="any" required/></td>';
                 cols += '<td class="net_unit_price"></td>';
-                cols += '<td class="discount">{{number_format(0, $general_setting->decimal, '.', '')}}</td>';
+                cols += '<td class="discount">{{number_format(0, $general_setting->decimal, ',', '.')}}</td>';
                 cols += '<td class="tax"></td>';
                 cols += '<td class="sub-total"></td>';
                 cols += '<td><button type="button" class="ibtnDel btn btn-md btn-danger">{{trans("file.delete")}}</button></td>';
@@ -782,9 +782,9 @@ function calculateGrandTotal() {
     var shipping_cost = parseFloat($('input[name="shipping_cost"]').val());
 
     if (!order_discount)
-        order_discount = {{number_format(0, $general_setting->decimal, '.', '')}};
+        order_discount = {{number_format(0, $general_setting->decimal, ',', '.')}};
     if (!shipping_cost)
-        shipping_cost = {{number_format(0, $general_setting->decimal, '.', '')}};
+        shipping_cost = {{number_format(0, $general_setting->decimal, ',', '.')}};
 
     item = ++item + '(' + total_qty + ')';
     order_tax = (subtotal - order_discount) * (order_tax / 100);

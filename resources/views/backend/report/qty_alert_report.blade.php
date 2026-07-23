@@ -29,8 +29,8 @@
                     </td>
                     <td>{{$product->name}}</td>
                     <td>{{$product->code}}</td>
-                    <td>{{number_format((float)($product->qty), $general_setting->decimal, '.', '')}}</td>
-                    <td>{{number_format((float)($product->alert_quantity), $general_setting->decimal, '.', '')}}</td>
+                    <td>{{number_format((float)($product->qty), $general_setting->decimal, ',', '.')}}</td>
+                    <td>{{number_format((float)($product->alert_quantity), $general_setting->decimal, ',', '.')}}</td>
                 </tr>
                 @endforeach
             </tbody>

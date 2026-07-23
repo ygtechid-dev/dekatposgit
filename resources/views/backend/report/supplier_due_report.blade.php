@@ -51,14 +51,14 @@
                         <td>{{date($general_setting->date_format, strtotime($purchase_data->created_at->toDateString())) . ' '. $purchase_data->created_at->toTimeString()}}</td>
                         <td>{{$purchase_data->reference_no}}</td>
                         <td>{{$supplier->name .' (' .$supplier->phone_number . ')'}}</td>
-                        <td>{{number_format((float)$purchase_data->grand_total, $general_setting->decimal, '.', '')}}</td>
-                        <td>{{number_format((float)$returned_amount, $general_setting->decimal, '.', '')}}</td>
+                        <td>{{number_format((float)$purchase_data->grand_total, $general_setting->decimal, ',', '.')}}</td>
+                        <td>{{number_format((float)$returned_amount, $general_setting->decimal, ',', '.')}}</td>
                         @if($purchase_data->paid_amount)
-                        <td>{{number_format((float)$purchase_data->paid_amount, $general_setting->decimal, '.', '')}}</td>
+                        <td>{{number_format((float)$purchase_data->paid_amount, $general_setting->decimal, ',', '.')}}</td>
                         @else
-                        <td>{{number_format(0, $general_setting->decimal, '.', '')}}</td>
+                        <td>{{number_format(0, $general_setting->decimal, ',', '.')}}</td>
                         @endif
-                        <td>{{number_format((float)($purchase_data->grand_total - $returned_amount - $purchase_data->paid_amount), $general_setting->decimal, '.', '')}}</td>
+                        <td>{{number_format((float)($purchase_data->grand_total - $returned_amount - $purchase_data->paid_amount), $general_setting->decimal, ',', '.')}}</td>
                     </tr>
                     @endif
                 @endforeach
@@ -68,10 +68,10 @@
                 <th>{{trans('file.Total')}}:</th>
                 <th></th>
                 <th></th>
-                <th>{{number_format(0, $general_setting->decimal, '.', '')}}</th>
-                <th>{{number_format(0, $general_setting->decimal, '.', '')}}</th>
-                <th>{{number_format(0, $general_setting->decimal, '.', '')}}</th>
-                <th>{{number_format(0, $general_setting->decimal, '.', '')}}</th>
+                <th>{{number_format(0, $general_setting->decimal, ',', '.')}}</th>
+                <th>{{number_format(0, $general_setting->decimal, ',', '.')}}</th>
+                <th>{{number_format(0, $general_setting->decimal, ',', '.')}}</th>
+                <th>{{number_format(0, $general_setting->decimal, ',', '.')}}</th>
             </tfoot>
         </table>
     </div>

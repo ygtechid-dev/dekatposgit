@@ -52,12 +52,21 @@ class CustomerController extends Controller
 
     public function clearDue(Request $request)
     {
+        $request->validate([
+            'customer_id' => 'required',
+            'amount' => 'required|numeric|min:0.01',
+        ]);
+
         $lims_due_sale_data = Sale::select('id', 'warehouse_id', 'grand_total', 'paid_amount', 'payment_status')
                             ->where([
                                 ['payment_status', '!=', 4],
                                 ['customer_id', $request->customer_id]
-                            ])->get();
+                            ])->orderBy('id')->get();
         $total_paid_amount = $request->amount;
+        $account_data = Account::select('id')->where('is_default', 1)->first();
+        $piutang_id = JournalService::accountIdByCode(JournalService::PIUTANG_USAHA);
+        $kas_id = JournalService::coaIdForCashAccount($account_data ? $account_data->id : null);
+
         foreach ($lims_due_sale_data as $key => $sale_data) {
             if($total_paid_amount == 0)
                 break;
@@ -72,7 +81,6 @@ class CustomerController extends Controller
                 $cash_register_id = $lims_cash_register_data->id;
             else
                 $cash_register_id = null;
-            $account_data = Account::select('id')->where('is_default', 1)->first();
             if($total_paid_amount >= $due_amount) {
                 $paid_amount = $due_amount;
                 $payment_status = 4;
@@ -81,12 +89,12 @@ class CustomerController extends Controller
                 $paid_amount = $total_paid_amount;
                 $payment_status = 2;
             }
-            Payment::create([
+            $lims_payment_data = Payment::create([
                 'payment_reference' => 'spr-'.date("Ymd").'-'.date("his"),
                 'sale_id' => $sale_data->id,
                 'user_id' => Auth::id(),
                 'cash_register_id' => $cash_register_id,
-                'account_id' => $account_data->id,
+                'account_id' => $account_data ? $account_data->id : null,
                 'amount' => $paid_amount,
                 'change' => 0,
                 'paying_method' => 'Cash',
@@ -96,8 +104,71 @@ class CustomerController extends Controller
             $sale_data->payment_status = $payment_status;
             $sale_data->save();
             $total_paid_amount -= $paid_amount;
+
+            // Jurnal otomatis: pembayaran piutang -> Dr Kas / Cr Piutang Usaha
+            // (sama seperti pembayaran per-invoice biasa di SaleController).
+            JournalService::postSimple(now(), 'Pembayaran piutang ' . $sale_data->id, $kas_id, $piutang_id, $paid_amount, 'sale_payment', $lims_payment_data->id);
         }
         return redirect()->back()->with('message', 'Due cleared successfully');
+    }
+
+    /**
+     * Halaman khusus "Pembayaran Piutang": daftar pelanggan yang punya sisa
+     * piutang (bukan cuma tombol "Clear Due" yang nyempil di dropdown Action
+     * Customer List). Menggunakan JournalService::PIUTANG_USAHA sale query
+     * yang sama seperti clearDue() supaya angkanya konsisten.
+     */
+    public function duePayment()
+    {
+        $role = Role::find(Auth::user()->role_id);
+        if(!$role->hasPermissionTo('customers-index'))
+            return redirect()->back()->with('not_permitted', 'Sorry! You are not allowed to access this module');
+
+        $lims_customer_due = Customer::where('is_active', true)
+            ->get()
+            ->map(function($customer) {
+                $due = Sale::where([
+                    ['customer_id', $customer->id],
+                    ['payment_status', '!=', 4],
+                ])->selectRaw('COALESCE(SUM(grand_total - paid_amount), 0) as total_due')->value('total_due');
+                $customer->total_due = (float) $due;
+                return $customer;
+            })
+            ->filter(function($customer) {
+                return $customer->total_due > 0.009;
+            })
+            ->sortByDesc('total_due')
+            ->values();
+
+        return view('backend.customer.due_payment', compact('lims_customer_due'));
+    }
+
+    /**
+     * Rincian invoice yang belum lunas milik satu pelanggan - dipakai oleh
+     * halaman Pembayaran Piutang supaya kasir tahu invoice mana saja yang
+     * akan otomatis dilunasi (FIFO, invoice paling lama duluan) sebelum
+     * submit pembayaran lewat clearDue().
+     */
+    public function dueInvoices($id)
+    {
+        $sales = Sale::where([
+                ['customer_id', $id],
+                ['payment_status', '!=', 4],
+            ])
+            ->orderBy('id')
+            ->get(['id', 'reference_no', 'created_at', 'grand_total', 'paid_amount']);
+
+        $data = $sales->map(function($sale) {
+            return [
+                'reference_no' => $sale->reference_no,
+                'date' => $sale->created_at ? $sale->created_at->format('d-m-Y') : '-',
+                'grand_total' => (float) $sale->grand_total,
+                'paid_amount' => (float) $sale->paid_amount,
+                'due' => (float) ($sale->grand_total - $sale->paid_amount),
+            ];
+        });
+
+        return response()->json($data);
     }
 
     public function create()

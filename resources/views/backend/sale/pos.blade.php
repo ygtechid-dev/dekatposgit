@@ -1,5 +1,14 @@
 @extends('backend.layout.top-head')
 @section('content')
+<style>
+/* Perbaikan: halaman POS pakai layout top-head yang tidak memuat custom-default.css,
+   jadi dropdown hasil pencarian produk (jQuery UI autocomplete) tidak pernah
+   ke-style/ke-posisi dengan benar dan seolah "tidak muncul". Style ini disalin
+   dari custom-default.css supaya dropdown-nya tampil di halaman ini juga. */
+.ui-menu.ui-widget.ui-widget-content.ui-autocomplete.ui-front{background:#7c5cc4;width:300px;padding:15px;position:absolute!important;z-index:9999}
+.ui-menu.ui-widget.ui-widget-content.ui-autocomplete.ui-front li.ui-menu-item{color:#fff;cursor:pointer;font-size:14px;list-style:none;padding:5px 10px;padding-left:0}
+.ui-menu.ui-widget.ui-widget-content.ui-autocomplete.ui-front li.ui-menu-item:hover{opacity:.7}
+</style>
 @if($errors->has('phone_number'))
 <div class="alert alert-danger alert-dismissible text-center">
     <button type="button" class="close" data-dismiss="alert" aria-label="Close"><span aria-hidden="true">&times;</span></button>{{ $errors->first('phone_number') }}
@@ -162,14 +171,14 @@
                                             </div>
                                         </div>
                                     </div>
-                                    <div class="col-md-2">
+                                    <div class="col-md-2 d-none">
                                         <select name="currency_id" id="currency" class="form-control selectpicker" data-toggle="tooltip" title="" data-original-title="Sale currency">
                                             @foreach($currency_list as $currency_data)
                                             <option value="{{$currency_data->id}}" data-rate="{{$currency_data->exchange_rate}}">{{$currency_data->code}}</option>
                                             @endforeach
                                         </select>
                                     </div>
-                                    <div class="col-md-2">
+                                    <div class="col-md-2 d-none">
                                         <div class="form-group d-flex">
                                             <input class="form-control" type="text" id="exchange_rate" name="exchange_rate" value="{{$currency->exchange_rate}}">
                                             <div class="input-group-append">
@@ -298,19 +307,19 @@
                                             <span class="totals-title">{{trans('file.Items')}}</span><span id="item">0</span>
                                         </div>
                                         <div class="col-sm-4">
-                                            <span class="totals-title">{{trans('file.Total')}}</span><span id="subtotal">{{number_format(0, $general_setting->decimal, '.', '')}}</span>
+                                            <span class="totals-title">{{trans('file.Total')}}</span><span id="subtotal">{{number_format(0, $general_setting->decimal, ',', '.')}}</span>
                                         </div>
                                         <div class="col-sm-4">
-                                            <span class="totals-title">{{trans('file.Discount')}} <button type="button" class="btn btn-link btn-sm" data-toggle="modal" data-target="#order-discount-modal"> <i class="dripicons-document-edit"></i></button></span><span id="discount">{{number_format(0, $general_setting->decimal, '.', '')}}</span>
+                                            <span class="totals-title">{{trans('file.Discount')}} <button type="button" class="btn btn-link btn-sm" data-toggle="modal" data-target="#order-discount-modal"> <i class="dripicons-document-edit"></i></button></span><span id="discount">{{number_format(0, $general_setting->decimal, ',', '.')}}</span>
                                         </div>
                                         <div class="col-sm-4">
-                                            <span class="totals-title">{{trans('file.Coupon')}} <button type="button" class="btn btn-link btn-sm" data-toggle="modal" data-target="#coupon-modal"><i class="dripicons-document-edit"></i></button></span><span id="coupon-text">{{number_format(0, $general_setting->decimal, '.', '')}}</span>
+                                            <span class="totals-title">{{trans('file.Coupon')}} <button type="button" class="btn btn-link btn-sm" data-toggle="modal" data-target="#coupon-modal"><i class="dripicons-document-edit"></i></button></span><span id="coupon-text">{{number_format(0, $general_setting->decimal, ',', '.')}}</span>
                                         </div>
                                         <div class="col-sm-4">
-                                            <span class="totals-title">{{trans('file.Tax')}} <button type="button" class="btn btn-link btn-sm" data-toggle="modal" data-target="#order-tax"><i class="dripicons-document-edit"></i></button></span><span id="tax">{{number_format(0, $general_setting->decimal, '.', '')}}</span>
+                                            <span class="totals-title">{{trans('file.Tax')}} <button type="button" class="btn btn-link btn-sm" data-toggle="modal" data-target="#order-tax"><i class="dripicons-document-edit"></i></button></span><span id="tax">{{number_format(0, $general_setting->decimal, ',', '.')}}</span>
                                         </div>
                                         <div class="col-sm-4">
-                                            <span class="totals-title">{{trans('file.Shipping')}} <button type="button" class="btn btn-link btn-sm" data-toggle="modal" data-target="#shipping-cost-modal"><i class="dripicons-document-edit"></i></button></span><span id="shipping-cost">{{number_format(0, $general_setting->decimal, '.', '')}}</span>
+                                            <span class="totals-title">{{trans('file.Shipping')}} <button type="button" class="btn btn-link btn-sm" data-toggle="modal" data-target="#shipping-cost-modal"><i class="dripicons-document-edit"></i></button></span><span id="shipping-cost">{{number_format(0, $general_setting->decimal, ',', '.')}}</span>
                                         </div>
                                     </div>
                                 </div>
@@ -318,7 +327,7 @@
                         </div>
                     </div>
                     <div class="payment-amount">
-                        <h2>{{trans('file.grand total')}} <span id="grand-total">{{number_format(0, $general_setting->decimal, '.', '')}}</span></h2>
+                        <h2>{{trans('file.grand total')}} <span id="grand-total">{{number_format(0, $general_setting->decimal, ',', '.')}}</span></h2>
                     </div>
                     <div class="payment-options">
 
@@ -361,6 +370,9 @@
                         </div>
                         @endif
                         <div class="column-5">
+                            <button style="background-color: #6c5ce7" type="button" class="btn btn-sm btn-custom payment-btn" data-toggle="modal" data-target="#add-payment" id="credit-due-btn"><i class="fa fa-book"></i> Piutang</button>
+                        </div>
+                        <div class="column-5">
                             <button style="background-color: #d63031;" type="button" class="btn btn-sm btn-custom" id="cancel-btn" onclick="return confirmCancel()"><i class="fa fa-close"></i> {{trans('file.Cancel')}}</button>
                         </div>
                         <div class="column-5">
@@ -391,7 +403,7 @@
                                         </div>
                                         <div class="col-md-3 mt-1">
                                             <label>{{trans('file.Change')}} : </label>
-                                            <p id="change" class="ml-2">{{number_format(0, $general_setting->decimal, '.', '')}}</p>
+                                            <p id="change" class="ml-2">{{number_format(0, $general_setting->decimal, ',', '.')}}</p>
                                         </div>
                                         <div class="col-md-3 mt-1">
                                             <input type="hidden" name="paid_by_id">
@@ -418,6 +430,7 @@
                                                 @if($lims_reward_point_setting_data && $lims_reward_point_setting_data->is_active)
                                                 <option value="7">Points</option>
                                                 @endif
+                                                <option value="8">Kredit / Piutang</option>
                                             </select>
                                         </div>
                                         <div class="col-md-6 mt-1">
@@ -1024,7 +1037,7 @@
                                                     <td>{{date('d-m-Y', strtotime($sale->created_at))}}</td>
                                                     <td>{{$sale->reference_no}}</td>
                                                     <td>{{$customer->name}}</td>
-                                                    <td>{{$sale->grand_total}}</td>
+                                                    <td>{{number_format($sale->grand_total, 2, ',', '.')}}</td>
                                                     <td>
                                                         <div class="btn-group">
                                                             @if(in_array("sales-edit", $all_permission))
@@ -1062,7 +1075,7 @@
                                                     <td>{{date('d-m-Y', strtotime($draft->created_at))}}</td>
                                                     <td>{{$draft->reference_no}}</td>
                                                     <td>{{$customer->name}}</td>
-                                                    <td>{{$draft->grand_total}}</td>
+                                                    <td>{{number_format($draft->grand_total, 2, ',', '.')}}</td>
                                                     <td>
                                                         <div class="btn-group">
                                                             @if(in_array("sales-edit", $all_permission))
@@ -1087,13 +1100,12 @@
                 </div>
             </div>
             <!-- add cash register modal -->
-            <div id="cash-register-modal" tabindex="-1" role="dialog" aria-labelledby="exampleModalLabel" aria-hidden="true" class="modal fade text-left">
+            <div id="cash-register-modal" tabindex="-1" role="dialog" aria-labelledby="exampleModalLabel" aria-hidden="true" class="modal fade text-left" data-backdrop="static" data-keyboard="false">
                 <div role="document" class="modal-dialog">
                     <div class="modal-content">
                         {!! Form::open(['route' => 'cashRegister.store', 'method' => 'post']) !!}
                         <div class="modal-header">
                             <h5 id="exampleModalLabel" class="modal-title">Modal Awal Kasir</h5>
-                            <button type="button" data-dismiss="modal" aria-label="Close" class="close"><span aria-hidden="true"><i class="dripicons-cross"></i></span></button>
                         </div>
                         <div class="modal-body">
                             <p class="italic"><small>{{trans('file.The field labels marked with * are required input fields')}}.</small></p>
@@ -1372,7 +1384,7 @@
     });
     @endif
 
-    @if(session() - > get('message') == 'Sale successfully added to draft')
+    @if(session()->get('message') == 'Sale successfully added to draft')
     localStorage.clear();
     @endif
 
@@ -1388,17 +1400,9 @@
     function formatRupiah(number) {
         number = parseFloat(number);
         if (isNaN(number)) number = 0;
-        var parts = number.toFixed({
-            {
-                $general_setting - > decimal
-            }
-        }).split(".");
+        var parts = number.toFixed({{$general_setting->decimal}}).split(".");
         parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, ".");
-        return parts.join({
-            {
-                $general_setting - > decimal
-            }
-        } > 0 ? ',' : '');
+        return parts.join({{$general_setting->decimal}} > 0 ? ',' : '');
     }
 
     // array data depend on warehouse
@@ -1550,11 +1554,7 @@
 
             product_price.push(parseFloat($('table.order-list tbody tr:nth-child(' + (i + 1) + ')').find('.product_price').val()));
             var quantity = parseFloat($('table.order-list tbody tr:nth-child(' + (i + 1) + ')').find('.qty').val());
-            product_discount.push(parseFloat(localStorageProductDiscount[i] / localStorageQty[i]).toFixed({
-                {
-                    $general_setting - > decimal
-                }
-            }));
+            product_discount.push(parseFloat(localStorageProductDiscount[i] / localStorageQty[i]).toFixed({{$general_setting->decimal}}));
             tax_rate.push(parseFloat($('table.order-list tbody tr:nth-child(' + (i + 1) + ')').find('.tax-rate').val()));
             tax_name.push($('table.order-list tbody tr:nth-child(' + (i + 1) + ')').find('.tax-name').val());
             tax_method.push($('table.order-list tbody tr:nth-child(' + (i + 1) + ')').find('.tax-method').val());
@@ -1667,8 +1667,7 @@
     $('.customer-submit-btn').on("click", function() {
         $.ajax({
             type: 'POST',
-            url: '{{route('
-            customer.store ')}}',
+            url: '{{route('customer.store')}}',
             data: $("#customer-form").serialize(),
             success: function(response) {
                 key = response['id'];
@@ -1823,7 +1822,7 @@
             url: 'cash-register/check-availability/' + warehouse_id,
             type: "GET",
             success: function(data) {
-                if (data == 'false') {
+                if (data.status == 'available') {
                     $("#register-details-btn").addClass('d-none');
                     $('#cash-register-modal select[name=warehouse_id]').val(warehouse_id);
 
@@ -1833,9 +1832,18 @@
                         $("#cash-register-modal .warehouse-section").addClass('d-none');
 
                     $('.selectpicker').selectpicker('refresh');
-                    $("#cash-register-modal").modal('show');
-                } else
+                    $("#cash-register-modal").modal({
+                        backdrop: 'static',
+                        keyboard: false,
+                        show: true
+                    });
+                } else if (data.status == 'open') {
                     $("#register-details-btn").removeClass('d-none');
+                } else {
+                    $("#register-details-btn").addClass('d-none');
+                    alert(data.message || 'Kasir belum bisa dibuka. Selesaikan setoran kasir terlebih dahulu.');
+                    window.location.href = "{{route('cashRegister.index')}}";
+                }
             }
         });
     }
@@ -2032,7 +2040,8 @@
             }));
         },
         response: function(event, ui) {
-            if (ui.content.length == 1) {
+            var typed_term = $('#lims_productcodeSearch').val().trim().toLowerCase();
+            if (ui.content.length == 1 && ui.content[0].value.split(' (')[0].toLowerCase() == typed_term) {
                 var data = ui.content[0].value;
                 $(this).autocomplete("close");
                 productSearch(data);
@@ -2283,8 +2292,10 @@
     $(".payment-btn").on("click", function() {
         var audio = $("#mysoundclip2")[0];
         audio.play();
-        $('input[name="paid_amount"]').val($("#grand-total").text());
-        $('input[name="paying_amount"]').val($("#grand-total").text());
+        $('input[name="paid_amount"]').val($('input[name="grand_total"]').val());
+        $('input[name="paying_amount"]').val($('input[name="grand_total"]').val());
+        $('input[name="paying_amount"]').prop('required', true);
+        $('input[name="paid_amount"]').prop('required', true);
         $('.qc').data('initial', 1);
     });
 
@@ -2356,6 +2367,18 @@
         pointCalculation();
     });
 
+    $("#credit-due-btn").on("click", function() {
+        $('select[name="paid_by_id_select"]').val(8);
+        $('.selectpicker').selectpicker('refresh');
+        $('div.qc').hide();
+        hide();
+        $('input[name="paid_amount"]').val(0);
+        $('input[name="paying_amount"]').val(0);
+        $('input[name="paying_amount"]').prop('required', false);
+        $('input[name="paid_amount"]').prop('required', false);
+        change(0, 0);
+    });
+
     $('select[name="paid_by_id_select"]').on("change", function() {
         var id = $(this).val();
         $(".payment-form").off("submit");
@@ -2378,6 +2401,13 @@
             } else if (id == 7) {
                 $('div.qc').hide();
                 pointCalculation();
+            } else if (id == 8) {
+                $('div.qc').hide();
+                $('input[name="paid_amount"]').val(0);
+                $('input[name="paying_amount"]').val(0);
+                $('input[name="paying_amount"]').prop('required', false);
+                $('input[name="paid_amount"]').prop('required', false);
+                change(0, 0);
             }
         }
     });
@@ -2398,7 +2428,7 @@
         if ($(this).val() > parseFloat($('input[name="paying_amount"]').val())) {
             alert('Paying amount cannot be bigger than recieved amount');
             $(this).val('');
-        } else if ($(this).val() > parseFloat($('#grand-total').text())) {
+        } else if ($(this).val() > parseFloat($('input[name="grand_total"]').val())) {
             alert('Paying amount cannot be bigger than grand total');
             $(this).val('');
         }
@@ -2438,23 +2468,13 @@
     $(document).on('click', '.qc-btn', function(e) {
         if ($(this).data('amount')) {
             if ($('.qc').data('initial')) {
-                $('input[name="paying_amount"]').val($(this).data('amount').toFixed({
-                    {
-                        $general_setting - > decimal
-                    }
-                }));
+                $('input[name="paying_amount"]').val($(this).data('amount').toFixed({{$general_setting->decimal}}));
                 $('.qc').data('initial', 0);
             } else {
-                $('input[name="paying_amount"]').val((parseFloat($('input[name="paying_amount"]').val()) + $(this).data('amount')).toFixed({
-                    {
-                        $general_setting - > decimal
-                    }
-                }));
+                $('input[name="paying_amount"]').val((parseFloat($('input[name="paying_amount"]').val()) + $(this).data('amount')).toFixed({{$general_setting->decimal}}));
             }
         } else
-            $('input[name="paying_amount"]').val('{{number_format(0, $general_setting->decimal, '.
-                ', '
-                ')}}');
+            $('input[name="paying_amount"]').val('{{number_format(0, $general_setting->decimal, ',', '.')}}');
         change($('input[name="paying_amount"]').val(), $('input[name="paid_amount"]').val());
     });
 
@@ -2580,13 +2600,9 @@
         if (data[16])
             wholesale_price.splice(rowindex, 0, parseFloat(data[16] * currency['exchange_rate']) + parseFloat(data[16] * currency['exchange_rate'] * customer_group_rate));
         else
-            wholesale_price.splice(rowindex, 0, '{{number_format(0, $general_setting->decimal, '.
-                ', '
-                ')}}');
+            wholesale_price.splice(rowindex, 0, '{{number_format(0, $general_setting->decimal, '.', '')}}');
         cost.splice(rowindex, 0, parseFloat(data[17] * currency['exchange_rate']));
-        product_discount.splice(rowindex, 0, '{{number_format(0, $general_setting->decimal, '.
-            ', '
-            ')}}');
+        product_discount.splice(rowindex, 0, '{{number_format(0, $general_setting->decimal, '.', '')}}');
         tax_rate.splice(rowindex, 0, parseFloat(data[3]));
         tax_name.splice(rowindex, 0, data[4]);
         tax_method.splice(rowindex, 0, data[5]);
@@ -2601,29 +2617,17 @@
         localStorageProductCode.splice(rowindex, 0, data[1]);
         localStorageSaleUnit.splice(rowindex, 0, temp_unit_name[0]);
         localStorageProductDiscount.splice(rowindex, 0, product_discount[rowindex]);
-        localStorageTaxRate.splice(rowindex, 0, tax_rate[rowindex].toFixed({
-            {
-                $general_setting - > decimal
-            }
-        }));
+        localStorageTaxRate.splice(rowindex, 0, tax_rate[rowindex].toFixed({{$general_setting->decimal}}));
         localStorageTaxName.splice(rowindex, 0, data[4]);
         localStorageTaxMethod.splice(rowindex, 0, data[5]);
         localStorageTempUnitName.splice(rowindex, 0, data[6]);
         localStorageSaleUnitOperator.splice(rowindex, 0, data[7]);
         localStorageSaleUnitOperationValue.splice(rowindex, 0, data[8]);
         //put some dummy value
-        localStorageNetUnitPrice.splice(rowindex, 0, '{{number_format(0, $general_setting->decimal, '.
-            ', '
-            ')}}');
-        localStorageTaxValue.splice(rowindex, 0, '{{number_format(0, $general_setting->decimal, '.
-            ', '
-            ')}}');
-        localStorageSubTotalUnit.splice(rowindex, 0, '{{number_format(0, $general_setting->decimal, '.
-            ', '
-            ')}}');
-        localStorageSubTotal.splice(rowindex, 0, '{{number_format(0, $general_setting->decimal, '.
-            ', '
-            ')}}');
+        localStorageNetUnitPrice.splice(rowindex, 0, '{{number_format(0, $general_setting->decimal, '.', '')}}');
+        localStorageTaxValue.splice(rowindex, 0, '{{number_format(0, $general_setting->decimal, '.', '')}}');
+        localStorageSubTotalUnit.splice(rowindex, 0, '{{number_format(0, $general_setting->decimal, '.', '')}}');
+        localStorageSubTotal.splice(rowindex, 0, '{{number_format(0, $general_setting->decimal, '.', '')}}');
 
         localStorage.setItem("localStorageProductId", localStorageProductId);
         localStorage.setItem("localStorageSaleUnit", localStorageSaleUnit);
@@ -2665,11 +2669,7 @@
         var qty = $('table.order-list tbody tr:nth-child(' + (rowindex + 1) + ')').find('.qty').val();
         $('input[name="edit_qty"]').val(qty);
 
-        $('input[name="edit_discount"]').val(parseFloat(product_discount[rowindex]).toFixed({
-            {
-                $general_setting - > decimal
-            }
-        }));
+        $('input[name="edit_discount"]').val(parseFloat(product_discount[rowindex]).toFixed({{$general_setting->decimal}}));
 
         var tax_name_all = <?php echo json_encode($tax_name_all) ?>;
         pos = tax_name_all.indexOf(tax_name[rowindex]);
@@ -2694,11 +2694,7 @@
             row_product_price = product_price[rowindex];
             $("#edit_unit").hide();
         }
-        $('input[name="edit_unit_price"]').val(row_product_price.toFixed({
-            {
-                $general_setting - > decimal
-            }
-        }));
+        $('input[name="edit_unit_price"]').val(row_product_price.toFixed({{$general_setting->decimal}}));
         $('.selectpicker').selectpicker('refresh');
     }
 
@@ -2719,11 +2715,7 @@
                     else if (value['type'] == 'fixed') {
                         if (parseFloat($('input[name="grand_total"]').val()) >= value['minimum_amount']) {
                             $('input[name="grand_total"]').val($('input[name="grand_total"]').val() - (value['amount'] * currency['exchange_rate']));
-                            $('#grand-total').text(parseFloat($('input[name="grand_total"]').val()).toFixed({
-                                {
-                                    $general_setting - > decimal
-                                }
-                            }));
+                            $('#grand-total').text(formatRupiah($('input[name="grand_total"]').val()));
                             if (!$('input[name="coupon_active"]').val())
                                 alert('Congratulation! You got ' + (value['amount'] * currency['exchange_rate']) + ' ' + currency['code'] + ' discount');
                             $(".coupon-check").prop("disabled", true);
@@ -2732,11 +2724,7 @@
                             $("#coupon-modal").modal('hide');
                             $('input[name="coupon_id"]').val(value['id']);
                             $('input[name="coupon_discount"]').val(value['amount'] * currency['exchange_rate']);
-                            $('#coupon-text').text(parseFloat(value['amount'] * currency['exchange_rate']).toFixed({
-                                {
-                                    $general_setting - > decimal
-                                }
-                            }));
+                            $('#coupon-text').text(formatRupiah(value['amount'] * currency['exchange_rate']));
                         } else
                             alert('Grand Total is not sufficient for discount! Required ' + value['minimum_amount'] + ' ' + currency['code']);
                     } else {
@@ -2744,11 +2732,7 @@
                         var coupon_discount = grand_total * (value['amount'] / 100);
                         grand_total = grand_total - coupon_discount;
                         $('input[name="grand_total"]').val(grand_total);
-                        $('#grand-total').text(parseFloat(grand_total).toFixed({
-                            {
-                                $general_setting - > decimal
-                            }
-                        }));
+                        $('#grand-total').text(formatRupiah(grand_total));
                         if (!$('input[name="coupon_active"]').val())
                             alert('Congratulation! You got ' + value['amount'] + '% discount');
                         $(".coupon-check").prop("disabled", true);
@@ -2757,11 +2741,7 @@
                         $("#coupon-modal").modal('hide');
                         $('input[name="coupon_id"]').val(value['id']);
                         $('input[name="coupon_discount"]').val(coupon_discount);
-                        $('#coupon-text').text(parseFloat(coupon_discount).toFixed({
-                            {
-                                $general_setting - > decimal
-                            }
-                        }));
+                        $('#coupon-text').text(formatRupiah(coupon_discount));
                     }
                 }
             });
@@ -2879,60 +2859,20 @@
             var sub_total = sub_total_unit * quantity;
         }
 
-        $('table.order-list tbody tr:nth-child(' + (rowindex + 1) + ')').find('.discount-value').val((product_discount[rowindex] * quantity).toFixed({
-            {
-                $general_setting - > decimal
-            }
-        }));
-        $('table.order-list tbody tr:nth-child(' + (rowindex + 1) + ')').find('.tax-rate').val(tax_rate[rowindex].toFixed({
-            {
-                $general_setting - > decimal
-            }
-        }));
-        $('table.order-list tbody tr:nth-child(' + (rowindex + 1) + ')').find('.net_unit_price').val(net_unit_price.toFixed({
-            {
-                $general_setting - > decimal
-            }
-        }));
-        $('table.order-list tbody tr:nth-child(' + (rowindex + 1) + ')').find('.tax-value').val(tax.toFixed({
-            {
-                $general_setting - > decimal
-            }
-        }));
+        $('table.order-list tbody tr:nth-child(' + (rowindex + 1) + ')').find('.discount-value').val((product_discount[rowindex] * quantity).toFixed({{$general_setting->decimal}}));
+        $('table.order-list tbody tr:nth-child(' + (rowindex + 1) + ')').find('.tax-rate').val(tax_rate[rowindex].toFixed({{$general_setting->decimal}}));
+        $('table.order-list tbody tr:nth-child(' + (rowindex + 1) + ')').find('.net_unit_price').val(net_unit_price.toFixed({{$general_setting->decimal}}));
+        $('table.order-list tbody tr:nth-child(' + (rowindex + 1) + ')').find('.tax-value').val(tax.toFixed({{$general_setting->decimal}}));
         $('table.order-list tbody tr:nth-child(' + (rowindex + 1) + ')').find('.product-price').text(formatRupiah(sub_total_unit));
         $('table.order-list tbody tr:nth-child(' + (rowindex + 1) + ')').find('.sub-total').text(formatRupiah(sub_total));
-        $('table.order-list tbody tr:nth-child(' + (rowindex + 1) + ')').find('.subtotal-value').val(formatRupiah(sub_total));
+        $('table.order-list tbody tr:nth-child(' + (rowindex + 1) + ')').find('.subtotal-value').val(sub_total.toFixed({{$general_setting->decimal}}));
 
-        localStorageProductDiscount.splice(rowindex, 1, (product_discount[rowindex] * quantity).toFixed({
-            {
-                $general_setting - > decimal
-            }
-        }));
-        localStorageTaxRate.splice(rowindex, 1, tax_rate[rowindex].toFixed({
-            {
-                $general_setting - > decimal
-            }
-        }));
-        localStorageNetUnitPrice.splice(rowindex, 1, net_unit_price.toFixed({
-            {
-                $general_setting - > decimal
-            }
-        }));
-        localStorageTaxValue.splice(rowindex, 1, tax.toFixed({
-            {
-                $general_setting - > decimal
-            }
-        }));
-        localStorageSubTotalUnit.splice(rowindex, 1, sub_total_unit.toFixed({
-            {
-                $general_setting - > decimal
-            }
-        }));
-        localStorageSubTotal.splice(rowindex, 1, sub_total.toFixed({
-            {
-                $general_setting - > decimal
-            }
-        }));
+        localStorageProductDiscount.splice(rowindex, 1, (product_discount[rowindex] * quantity).toFixed({{$general_setting->decimal}}));
+        localStorageTaxRate.splice(rowindex, 1, tax_rate[rowindex].toFixed({{$general_setting->decimal}}));
+        localStorageNetUnitPrice.splice(rowindex, 1, net_unit_price.toFixed({{$general_setting->decimal}}));
+        localStorageTaxValue.splice(rowindex, 1, tax.toFixed({{$general_setting->decimal}}));
+        localStorageSubTotalUnit.splice(rowindex, 1, sub_total_unit.toFixed({{$general_setting->decimal}}));
+        localStorageSubTotal.splice(rowindex, 1, sub_total.toFixed({{$general_setting->decimal}}));
         localStorage.setItem("localStorageProductDiscount", localStorageProductDiscount);
         localStorage.setItem("localStorageTaxRate", localStorageTaxRate);
         localStorage.setItem("localStorageNetUnitPrice", localStorageNetUnitPrice);
@@ -2961,11 +2901,7 @@
             total_discount += parseFloat($(this).val());
         });
 
-        $('input[name="total_discount"]').val(total_discount.toFixed({
-            {
-                $general_setting - > decimal
-            }
-        }));
+        $('input[name="total_discount"]').val(total_discount.toFixed({{$general_setting->decimal}}));
 
         //Sum of tax
         var total_tax = 0;
@@ -2973,22 +2909,14 @@
             total_tax += parseFloat($(this).val());
         });
 
-        $('input[name="total_tax"]').val(total_tax.toFixed({
-            {
-                $general_setting - > decimal
-            }
-        }));
+        $('input[name="total_tax"]').val(total_tax.toFixed({{$general_setting->decimal}}));
 
         //Sum of subtotal
         var total = 0;
-        $(".sub-total").each(function() {
-            total += parseFloat($(this).text());
+        $(".subtotal-value").each(function() {
+            total += parseFloat($(this).val());
         });
-        $('input[name="total_price"]').val(total.toFixed({
-            {
-                $general_setting - > decimal
-            }
-        }));
+        $('input[name="total_price"]').val(total.toFixed({{$general_setting->decimal}}));
 
         calculateGrandTotal();
     }
@@ -3002,11 +2930,7 @@
         var order_discount_value = parseFloat($('input[name="order_discount_value"]').val());
 
         if (!order_discount_value)
-            order_discount_value = {
-                {
-                    number_format(0, $general_setting - > decimal, '.', '')
-                }
-            };
+            order_discount_value = {{number_format(0, $general_setting->decimal, ',', '.')}};
 
         if (order_discount_type == 'Flat') {
             if (!currencyChange) {
@@ -3026,20 +2950,12 @@
         else
             var shipping_cost = parseFloat($('input[name="shipping_cost"]').val() * currency['exchange_rate']);
         if (!shipping_cost)
-            shipping_cost = {
-                {
-                    number_format(0, $general_setting - > decimal, '.', '')
-                }
-            };
+            shipping_cost = {{number_format(0, $general_setting->decimal, ',', '.')}};
 
         item = ++item + '(' + total_qty + ')';
         order_tax = (subtotal - order_discount) * (order_tax / 100);
         var grand_total = (subtotal + order_tax + shipping_cost) - order_discount;
-        $('input[name="grand_total"]').val(grand_total.toFixed({
-            {
-                $general_setting - > decimal
-            }
-        }));
+        $('input[name="grand_total"]').val(grand_total.toFixed({{$general_setting->decimal}}));
 
         couponDiscount();
         if (!currencyChange)
@@ -3047,30 +2963,18 @@
         else
             var coupon_discount = parseFloat($('input[name="coupon_discount"]').val() * currency['exchange_rate']);
         if (!coupon_discount)
-            coupon_discount = {
-                {
-                    number_format(0, $general_setting - > decimal, '.', '')
-                }
-            };
+            coupon_discount = {{number_format(0, $general_setting->decimal, ',', '.')}};
         grand_total -= coupon_discount;
 
         $('#item').text(item);
         $('input[name="item"]').val($('table.order-list tbody tr:last').index() + 1);
         $('#subtotal').text(formatRupiah(subtotal));
         $('#tax').text(formatRupiah(order_tax));
-        $('input[name="order_tax"]').val(order_tax.toFixed({
-            {
-                $general_setting - > decimal
-            }
-        }));
+        $('input[name="order_tax"]').val(order_tax.toFixed({{$general_setting->decimal}}));
         $('#shipping-cost').text(formatRupiah(shipping_cost));
         $('input[name="shipping_cost"]').val(shipping_cost);
         $('#grand-total').text(formatRupiah(grand_total));
-        $('input[name="grand_total"]').val(grand_total.toFixed({
-            {
-                $general_setting - > decimal
-            }
-        }));
+        $('input[name="grand_total"]').val(grand_total.toFixed({{$general_setting->decimal}}));
         currencyChange = false;
     }
 
@@ -3114,7 +3018,7 @@
     }
 
     function creditCard() {
-        @if($lims_pos_setting_data && (strlen($lims_pos_setting_data - > stripe_public_key) > 0) && (strlen($lims_pos_setting_data - > stripe_secret_key) > 0))
+        @if($lims_pos_setting_data && (strlen($lims_pos_setting_data->stripe_public_key) > 0) && (strlen($lims_pos_setting_data->stripe_secret_key) > 0))
         $.getScript("vendor/stripe/checkout.js");
         $(".card-element").show();
         $(".card-errors").show();
@@ -3159,6 +3063,7 @@
         $('input[name="shipping_cost"]').val('');
         $('input[name="order_discount_value"]').val('');
         $('select[name="order_tax_rate_select"]').val(0);
+        localStorage.clear();
         calculateTotal();
     }
 

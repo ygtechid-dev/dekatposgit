@@ -197,7 +197,7 @@
                         </div>
                         <div class="col-md-6 mt-1">
                             <label>{{trans('file.Change')}} : </label>
-                            <p class="change ml-2">{{number_format(0, $general_setting->decimal, '.', '')}}</p>
+                            <p class="change ml-2">{{number_format(0, $general_setting->decimal, ',', '.')}}</p>
                         </div>
                         <div class="col-md-6 mt-1">
                             <label>{{trans('file.Paid By')}}</label>
@@ -265,7 +265,7 @@
                         </div>
                         <div class="col-md-6 mt-1">
                             <label>{{trans('file.Change')}} : </label>
-                            <p class="change ml-2">{{number_format(0, $general_setting->decimal, '.', '')}}</p>
+                            <p class="change ml-2">{{number_format(0, $general_setting->decimal, ',', '.')}}</p>
                         </div>
                         <div class="col-md-6 mt-1">
                             <label>{{trans('file.Paid By')}}</label>

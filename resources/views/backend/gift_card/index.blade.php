@@ -48,9 +48,9 @@
                      ?>
                     <td>{{$client}}</td>
                     @endif
-                    <td>{{ $gift_card->amount }}</td>
-                    <td>{{ $gift_card->expense }}</td>
-                    <td>{{ $gift_card->amount - $gift_card->expense }}</td>
+                    <td>{{ number_format($gift_card->amount, 2, ',', '.') }}</td>
+                    <td>{{ number_format($gift_card->expense, 2, ',', '.') }}</td>
+                    <td>{{ number_format($gift_card->amount - $gift_card->expense, 2, ',', '.') }}</td>
                     <td>{{ $created_by->name }}</td>
                     @if($gift_card->expired_date >= date("Y-m-d"))
                       <td><div class="badge badge-success">{{date('d-m-Y', strtotime($gift_card->expired_date))}}</div></td>

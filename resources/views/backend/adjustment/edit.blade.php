@@ -84,7 +84,7 @@
                                                 	?>
                                                 	<td>{{$product->name}}</td>
                                                 	<td>{{$product->code}}</td>
-                                                	<td><select name="rack_id[]" class="form-control rack-select" data-rack-id="{{$product_adjustment_data->rack_id}}"><option value="">-</option></select></td>
+                                                	<td>{{ $product_adjustment_data->rack ? $product_adjustment_data->rack->name : '-' }}<input type="hidden" name="rack_id[]" value="{{$product_adjustment_data->rack_id}}"/></td>
                                                 	<td class="stock-system-cell">{{$system_baseline}}</td>
                                                 	<td><input type="number" class="form-control stock-fisik" value="{{$physical_baseline}}" required step="any" /></td>
                                                 	<td class="difference-cell">{{$difference_baseline}}</td>
@@ -150,6 +150,8 @@ var product_code = [];
 var product_name = [];
 var product_qty = [];
 var unit_cost = [];
+var product_rack_id = [];
+var product_rack_name = [];
 var lims_rack_array = [];
 var rackBaseUrl = "{{url('racks/warehouse')}}";
 
@@ -169,25 +171,15 @@ for(rowindex  =0; rowindex <= rownumber; rowindex++){
 	$('.selectpicker').selectpicker('refresh');
 	calculateTotal();
 
-	function populateRackOptions($select) {
-	    var current = $select.data('rack-id') ? String($select.data('rack-id')) : $select.val();
-	    var html = '<option value="">-</option>';
-	    $.each(lims_rack_array, function(i, rack) {
-	        html += '<option value="' + rack.id + '">' + rack.name + '</option>';
-	    });
-	    $select.html(html);
-	    if(current) $select.val(current);
-	    // Rak is only mandatory when the selected gudang/toko actually has
-	    // racks configured - warehouses that don't use racks stay optional.
-	    $select.prop('required', lims_rack_array.length > 0);
-	}
-
+	// lims_rack_array dipakai hanya sebagai penanda "gudang/toko ini pakai
+	// rak atau tidak". Baris yang sudah ada (dari server) selalu menampilkan
+	// rak yang sudah tersimpan (read-only) - lihat blade loop di atas.
 	if($('#warehouse_id').val()) {
+	    $('#lims_productcodeSearch').prop('disabled', true).attr('placeholder', 'Memuat daftar rak...');
 	    $.get(rackBaseUrl + '/' + $('#warehouse_id').val(), function(data) {
 	        lims_rack_array = data;
-	        $('.rack-select').each(function() {
-	            populateRackOptions($(this));
-	        });
+	    }).always(function() {
+	        $('#lims_productcodeSearch').prop('disabled', false).attr('placeholder', 'Please type product code and select...');
 	    });
 	}
 
@@ -208,6 +200,8 @@ for(rowindex  =0; rowindex <= rownumber; rowindex++){
         product_name = data[1];
         product_qty = data[2];
         unit_cost = data[3];
+        product_rack_id = data[4] || [];
+        product_rack_name = data[5] || [];
         $.each(product_code, function(index) {
             lims_product_array.push(product_code[index] + ' (' + product_name[index] + ')'+ '|' + unit_cost[index]);
         });
@@ -243,16 +237,19 @@ for(rowindex  =0; rowindex <= rownumber; rowindex++){
 	        product_name = data[1];
 	        product_qty = data[2];
 	        unit_cost = data[3];
+	        product_rack_id = data[4] || [];
+	        product_rack_name = data[5] || [];
             $.each(product_code, function(index) {
                 lims_product_array.push(product_code[index] + ' (' + product_name[index] + ')' + '|' + unit_cost[index]);
             });
 	    });
 	    if(id) {
+	        lims_rack_array = [];
+	        $('#lims_productcodeSearch').prop('disabled', true).attr('placeholder', 'Memuat daftar rak...');
 	        $.get(rackBaseUrl + '/' + id, function(data) {
 	            lims_rack_array = data;
-	            $('.rack-select').each(function() {
-	                populateRackOptions($(this));
-	            });
+	        }).always(function() {
+	            $('#lims_productcodeSearch').prop('disabled', false).attr('placeholder', 'Please type product code and select...');
 	        });
 	    }
 	    else {
@@ -297,10 +294,9 @@ for(rowindex  =0; rowindex <= rownumber; rowindex++){
             e.preventDefault();
             return;
         }
-        if (lims_rack_array.length && $('.rack-select').filter(function() { return !$(this).val(); }).length) {
-            alert('Gudang/toko ini menggunakan rak - pilih rak untuk setiap barang di tabel penyesuaian.');
-            e.preventDefault();
-        }
+        // Rak setiap baris sudah otomatis terisi dari data plan saat barang
+        // ditambahkan (lihat productSearch()) - barang tanpa rak sudah
+        // ditolak sebelum sempat masuk ke tabel.
     });
 
     function productSearch(data){
@@ -325,12 +321,20 @@ for(rowindex  =0; rowindex <= rownumber; rowindex++){
                 if(flag){
                     var pos = product_code.indexOf(data[1]);
                     var system_qty = (pos > -1) ? product_qty[pos] : 0;
+                    // Rak ikut otomatis dari plan yang sudah ada (Plan Toko/Plan
+                    // Gudang) - sama seperti gudang, bukan dipilih bebas di sini.
+                    if (lims_rack_array.length && (pos === -1 || !product_rack_id[pos])) {
+                        alert('Barang ini belum di-plan ke rak manapun. Plan dulu lewat menu Plan Toko/Plan Gudang sebelum bisa disesuaikan.');
+                        return;
+                    }
+                    var rackId = (pos > -1 && product_rack_id[pos]) ? product_rack_id[pos] : '';
+                    var rackName = (pos > -1 && product_rack_name[pos]) ? product_rack_name[pos] : '-';
 
                     var newRow = $("<tr>");
                     var cols = '';
                     cols += '<td>' + data[0] + '</td>';
                     cols += '<td>' + data[1] + '</td>';
-                    cols += '<td><select name="rack_id[]" class="form-control rack-select"><option value="">-</option></select></td>';
+                    cols += '<td>' + rackName + '<input type="hidden" name="rack_id[]" value="' + rackId + '"/></td>';
                     cols += '<td class="stock-system-cell">' + system_qty + '</td>';
                     cols += '<td><input type="number" class="form-control stock-fisik" value="' + system_qty + '" required step="any" /></td>';
                     cols += '<td class="difference-cell">0</td>';
@@ -345,7 +349,6 @@ for(rowindex  =0; rowindex <= rownumber; rowindex++){
 
                     newRow.append(cols);
                     $("table.order-list tbody").append(newRow);
-                    populateRackOptions(newRow.find('.rack-select'));
                     $('.selectpicker').selectpicker('refresh');
                     calculateTotal();
                 }

@@ -34,48 +34,48 @@
 				<td style="border: 1px solid #000; padding: 5px">N/A</td>
 			@endif
 			<td style="border: 1px solid #000; padding: 5px">{{$sale_data['qty'][$key].' '.$sale_data['unit'][$key]}}</td>
-			<td style="border: 1px solid #000; padding: 5px">{{number_format((float)($sale_data['total'][$key] / $sale_data['qty'][$key]), $general_setting->decimal, '.', '')}}</td>
-			<td style="border: 1px solid #000; padding: 5px">{{$sale_data['total'][$key]}}</td>
+			<td style="border: 1px solid #000; padding: 5px">{{number_format((float)($sale_data['total'][$key] / $sale_data['qty'][$key]), $general_setting->decimal, ',', '.')}}</td>
+			<td style="border: 1px solid #000; padding: 5px">{{number_format((float)$sale_data['total'][$key], $general_setting->decimal, ',', '.')}}</td>
 		</tr>
 		@endforeach
 		<tr>
 			<td colspan="3" style="border: 1px solid #000; padding: 5px"><strong>Total </strong></td>
 			<td style="border: 1px solid #000; padding: 5px">{{$sale_data['total_qty']}}</td>
 			<td style="border: 1px solid #000; padding: 5px"></td>
-			<td style="border: 1px solid #000; padding: 5px">{{$sale_data['total_price']}}</td>
+			<td style="border: 1px solid #000; padding: 5px">{{number_format((float)$sale_data['total_price'], $general_setting->decimal, ',', '.')}}</td>
 		</tr>
 		<tr>
 			<td colspan="5" style="border: 1px solid #000; padding: 5px"><strong>Order Tax </strong> </td>
-			<td style="border: 1px solid #000; padding: 5px">{{$sale_data['order_tax'].'('.$sale_data['order_tax_rate'].'%)'}}</td>
+			<td style="border: 1px solid #000; padding: 5px">{{number_format((float)$sale_data['order_tax'], $general_setting->decimal, ',', '.').' ('.$sale_data['order_tax_rate'].'%)'}}</td>
 		</tr>
 		<tr>
 			<td colspan="5" style="border: 1px solid #000; padding: 5px"><strong>Order discount </strong> </td>
 			<td style="border: 1px solid #000; padding: 5px">
-				@if($sale_data['order_discount']){{$sale_data['order_discount']}}
+				@if($sale_data['order_discount']){{number_format((float)$sale_data['order_discount'], $general_setting->decimal, ',', '.')}}
 				@else 0 @endif
 			</td>
 		</tr>
 		<tr>
 			<td colspan="5" style="border: 1px solid #000; padding: 5px"><strong>Shipping Cost</strong> </td>
 			<td style="border: 1px solid #000; padding: 5px">
-				@if($sale_data['shipping_cost']){{$sale_data['shipping_cost']}}
+				@if($sale_data['shipping_cost']){{number_format((float)$sale_data['shipping_cost'], $general_setting->decimal, ',', '.')}}
 				@else 0 @endif
 			</td>
 		</tr>
 		<tr>
 			<td colspan="5" style="border: 1px solid #000; padding: 5px"><strong>Grand Total</strong></td>
-			<td style="border: 1px solid #000; padding: 5px">{{$sale_data['grand_total']}}</td>
+			<td style="border: 1px solid #000; padding: 5px">{{number_format((float)$sale_data['grand_total'], $general_setting->decimal, ',', '.')}}</td>
 		</tr>
 		<tr>
 			<td colspan="5" style="border: 1px solid #000; padding: 5px"><strong>Paid Amount</strong></td>
 			<td style="border: 1px solid #000; padding: 5px">
-				@if($sale_data['paid_amount']){{$sale_data['paid_amount']}}
+				@if($sale_data['paid_amount']){{number_format((float)$sale_data['paid_amount'], $general_setting->decimal, ',', '.')}}
 				@else 0 @endif
 			</td>
 		</tr>
 		<tr>
 			<td colspan="5" style="border: 1px solid #000; padding: 5px"><strong>Due</strong></td>
-			<td style="border: 1px solid #000; padding: 5px">{{number_format((float)($sale_data['grand_total'] - $sale_data['paid_amount']), $general_setting->decimal, '.', '')}}</td>
+			<td style="border: 1px solid #000; padding: 5px">{{number_format((float)($sale_data['grand_total'] - $sale_data['paid_amount']), $general_setting->decimal, ',', '.')}}</td>
 		</tr>
 	</tbody>
 </table>

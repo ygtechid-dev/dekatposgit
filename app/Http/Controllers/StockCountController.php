@@ -106,6 +106,10 @@ class StockCountController extends Controller
         $temp_dif = -1000000;
         $data = [];
         $product = [];
+        $expected = [];
+        $counted = [];
+        $difference = [];
+        $cost = [];
         while( !feof($file_handle) ) {
             $current_line = fgetcsv($file_handle);
             if( $current_line && $i > 0 && ($current_line[3] != $current_line[4]) ){
@@ -152,10 +156,20 @@ class StockCountController extends Controller
         $file_handle = fopen('public/stock_count/'.$lims_stock_count_data->final_file, 'r');
         $i = 0;
         $product_id = [];
+        $names = [];
+        $code = [];
+        $qty = [];
+        $action = [];
         while( !feof($file_handle) ) {
             $current_line = fgetcsv($file_handle);
             if( $current_line && $i > 0 && ($current_line[3] != $current_line[4]) ){
                 $product_data = Product::where('code', $current_line[1])->first();
+                if(!$product_data) {
+                    // Skip rows whose product code no longer matches any
+                    // active product instead of fataling on $product_data->id.
+                    $i++;
+                    continue;
+                }
                 $product_id[] = $product_data->id;
                 $names[] = $current_line[0];
                 $code[] = $current_line[1];

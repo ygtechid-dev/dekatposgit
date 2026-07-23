@@ -43,9 +43,9 @@
                     @else
                     <td><div class="badge badge-info">{{$coupon->type}}</div></td>
                     @endif
-                    <td>{{ $coupon->amount }}</td>
+                    <td>{{ $coupon->type == 'percentage' ? $coupon->amount.'%' : number_format($coupon->amount, 2, ',', '.') }}</td>
                     @if($coupon->minimum_amount)
-                    <td>{{ $coupon->minimum_amount }}</td>
+                    <td>{{ number_format($coupon->minimum_amount, 2, ',', '.') }}</td>
                     @else
                     <td>N/A</td>
                     @endif

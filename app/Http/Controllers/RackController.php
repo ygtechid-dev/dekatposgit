@@ -10,10 +10,13 @@ class RackController extends Controller
 {
     public function index($warehouse_id)
     {
-        $lims_rack_list = Rack::where([
-            ['warehouse_id', $warehouse_id],
-            ['is_active', true]
-        ])->get();
+        $lims_rack_list = Rack::where('warehouse_id', $warehouse_id)
+            ->where(function ($query) {
+                $query->where('is_active', true)
+                    ->orWhereNull('is_active');
+            })
+            ->orderBy('name')
+            ->get();
         return response()->json($lims_rack_list);
     }
 

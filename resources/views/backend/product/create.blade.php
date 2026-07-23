@@ -1416,13 +1416,23 @@
 
     $(function() { initMoneyInputsDisplay(); });
 
-    // ---- Proc % -> Harga Jual auto-calculation ----
-    // "Proc %" is the profit margin taken on top of cost: price = cost + cost * percent / 100.
+    // ---- Proc % <-> Harga Jual auto-calculation ----
+    // "Proc %" adalah markup dari harga pokok:
+    // harga jual = harga pokok + (harga pokok x percent / 100)
     function calcPriceFromMarkup(costVal, percentVal) {
         var cost = parseFloat(unformatMoneyValue(costVal)) || 0;
         var percent = parseFloat(percentVal) || 0;
         var price = cost + (cost * percent / 100);
         return Math.round(price * 100) / 100;
+    }
+
+    // Kebalikannya: dari harga pokok & harga jual, hitung markup dari harga pokok.
+    function calcMarkupFromPrices(costVal, priceVal) {
+        var cost = parseFloat(unformatMoneyValue(costVal));
+        var price = parseFloat(unformatMoneyValue(priceVal));
+        if (isNaN(cost) || isNaN(price) || cost === 0) return '';
+        var percent = ((price - cost) / cost) * 100;
+        return Math.round(percent * 100) / 100;
     }
 
     // Mode "Satu Harga" (single)
@@ -1433,6 +1443,13 @@
         if (percent === '' || percent === undefined) return;
         $('#price-mode-single input[name="price"]').val(moneyDisplay(calcPriceFromMarkup(cost, percent)));
     });
+    // Kebalikannya: harga pokok + harga jual diisi langsung -> Proc% otomatis terisi
+    $(document).on('input', '#price-mode-single input[name="price"]', function() {
+        if ($('#price_mode').val() !== 'single') return;
+        var cost = $('#price-mode-single input[name="cost"]').val();
+        var percent = calcMarkupFromPrices(cost, $(this).val());
+        if (percent !== '') $('#price-mode-single input[name="markup_percent"]').val(percent);
+    });
 
     // Table modes (Satuan / Level Harga / Jumlah): base cost+markup -> base price
     $('#price-mode-table-body').on('input', '.base-cost, .base-markup', function() {
@@ -1440,6 +1457,12 @@
         var percent = $row.find('.base-markup').val();
         if (percent === '' || percent === undefined) return;
         $row.find('.base-price').val(moneyDisplay(calcPriceFromMarkup($row.find('.base-cost').val(), percent)));
+    });
+    // Kebalikannya: harga pokok + harga jual diisi langsung -> Proc% otomatis terisi
+    $('#price-mode-table-body').on('input', '.base-price', function() {
+        var $row = $(this).closest('tr');
+        var percent = calcMarkupFromPrices($row.find('.base-cost').val(), $(this).val());
+        if (percent !== '') $row.find('.base-markup').val(percent);
     });
 
     // Level Harga: per-group markup -> per-group price (uses row's base cost)
@@ -1449,6 +1472,13 @@
         var cost = $row.find('.base-cost').val();
         $row.find('.level-price[data-group-id="' + gid + '"]').val(moneyDisplay(calcPriceFromMarkup(cost, $(this).val())));
     });
+    // Kebalikannya: harga pokok + harga jual level diisi langsung -> Proc% level otomatis terisi
+    $('#price-mode-table-body').on('input', '.level-price', function() {
+        var $row = $(this).closest('tr');
+        var gid = $(this).data('group-id');
+        var percent = calcMarkupFromPrices($row.find('.base-cost').val(), $(this).val());
+        if (percent !== '') $row.find('.level-markup[data-group-id="' + gid + '"]').val(percent);
+    });
 
     // Jumlah (qty tiers): per-tier markup -> per-tier price (uses row's base cost)
     $('#price-mode-table-body').on('input', '.tier-markup', function() {
@@ -1456,6 +1486,37 @@
         var t = $(this).data('tier-no');
         var cost = $row.find('.base-cost').val();
         $row.find('.tier-price[data-tier-no="' + t + '"]').val(moneyDisplay(calcPriceFromMarkup(cost, $(this).val())));
+    });
+    // Kebalikannya: harga pokok + harga jual tier diisi langsung -> Proc% tier otomatis terisi
+    $('#price-mode-table-body').on('input', '.tier-price', function() {
+        var $row = $(this).closest('tr');
+        var t = $(this).data('tier-no');
+        var percent = calcMarkupFromPrices($row.find('.base-cost').val(), $(this).val());
+        if (percent !== '') $row.find('.tier-markup[data-tier-no="' + t + '"]').val(percent);
+    });
+
+    // ---- Auto-hitung harga satuan konversi (mis. Satuan Dasar Rp1.000 & 1 Pak = isi 10 -> Harga Pak otomatis Rp10.000) ----
+    // Setiap kali Harga Pokok/Harga Jual pada baris SATUAN DASAR diubah, semua
+    // baris satuan konversi lain (pak/dus/dll) ikut dihitung ulang: harga = harga satuan dasar x jumlah konversi.
+    function cascadeBaseUnitPrice($row) {
+        var unitId = $row.data('unit-id');
+        var unit = limsUnitConversions.filter(function(u) { return u.id == unitId; })[0];
+        if (!unit || !unit.is_base) return; // hanya baris satuan dasar yang jadi acuan
+        var baseCost = parseFloat(unformatMoneyValue($row.find('.base-cost').val()));
+        var basePrice = parseFloat(unformatMoneyValue($row.find('.base-price').val()));
+        $('#price-mode-table-body tr[data-unit-id]').each(function() {
+            var $r = $(this);
+            if ($r.is($row)) return;
+            var uid = $r.data('unit-id');
+            var u = limsUnitConversions.filter(function(x) { return x.id == uid; })[0];
+            if (!u) return;
+            var conversion = parseFloat(u.conversion) || 1;
+            if (!isNaN(baseCost)) $r.find('.base-cost').val(moneyDisplay(baseCost * conversion));
+            if (!isNaN(basePrice)) $r.find('.base-price').val(moneyDisplay(basePrice * conversion));
+        });
+    }
+    $('#price-mode-table-body').on('input', '.base-cost, .base-markup, .base-price', function() {
+        cascadeBaseUnitPrice($(this).closest('tr'));
     });
 
     function selectedSaleUnitIds() {
@@ -1467,15 +1528,24 @@
     }
 
     function priceModeTableHeaders(mode) {
-        var head = '<tr><th>No</th><th>Satuan</th><th>Jns Satuan</th><th>Jml Konversi</th><th>Poin</th><th>Komisi</th><th>Harga Pokok</th><th>Proc(%)</th><th>Harga Jual</th>';
+        var head = '<tr>' +
+            '<th style="min-width:40px">No</th>' +
+            '<th style="min-width:110px">Satuan</th>' +
+            '<th style="min-width:100px">Jns Satuan</th>' +
+            '<th style="min-width:100px">Jml Konversi</th>' +
+            '<th style="min-width:80px">Poin</th>' +
+            '<th style="min-width:90px">Komisi</th>' +
+            '<th style="min-width:130px">Harga Pokok</th>' +
+            '<th style="min-width:90px">Proc(%)</th>' +
+            '<th style="min-width:130px">Harga Jual</th>';
         if (mode == 'level') {
             $.each(limsCustomerGroupList, function(i, group) {
-                head += '<th>Proc ' + group.name + ' (%)</th><th>HJ ' + group.name + '</th>';
+                head += '<th style="min-width:100px">Proc ' + group.name + ' (%)</th><th style="min-width:130px">HJ ' + group.name + '</th>';
             });
         }
         if (mode == 'qty') {
             for (var t = 1; t <= 4; t++) {
-                head += '<th>Jumlah ' + t + '</th><th>Proc' + t + ' (%)</th><th>Harga ' + t + '</th>';
+                head += '<th style="min-width:100px">Jumlah ' + t + '</th><th style="min-width:100px">Proc' + t + ' (%)</th><th style="min-width:130px">Harga ' + t + '</th>';
             }
         }
         head += '</tr>';
@@ -1592,6 +1662,13 @@
             body += priceModeRow(i + 1, unit, mode, existingPriceUnitData[unit.id]);
         });
         $('#price-mode-table-body').html(body);
+
+        // Widen the table so every column (especially the extra "Jumlah/Proc/Harga"
+        // tier columns in mode "qty") has enough room instead of being squeezed.
+        var minWidth = 870; // base columns (No..Harga Jual)
+        if (mode == 'level') minWidth += 230 * limsCustomerGroupList.length;
+        if (mode == 'qty') minWidth += 330 * 4;
+        $('#price-mode-table').css('min-width', minWidth + 'px');
     }
 
     $('#price_mode').on('change', buildPriceUnitTable);

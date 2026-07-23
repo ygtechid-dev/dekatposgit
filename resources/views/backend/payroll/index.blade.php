@@ -35,7 +35,7 @@
                     <td>{{ $payroll->reference_no }}</td>
                     <td>{{ $employee->name}}</td>
                     <td>{{ $account ? $account->coa_label : '-' }}</td>
-                    <td>{{ number_format((float)$payroll->amount, $general_setting->decimal, '.', '')}}</td>
+                    <td>{{ number_format((float)$payroll->amount, $general_setting->decimal, ',', '.')}}</td>
                     @if($payroll->paying_method == 0)
                         <td>Cash</td>
                     @elseif($payroll->paying_method == 1)

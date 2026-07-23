@@ -247,7 +247,7 @@ class ReturnController extends Controller
                 $nestedData['warehouse'] = $returns->warehouse->name;
                 $nestedData['biller'] = $returns->biller->name;
                 $nestedData['customer'] = $returns->customer->name;
-                $nestedData['grand_total'] = number_format($returns->grand_total, config('decimal'));
+                $nestedData['grand_total'] = number_format($returns->grand_total, config('decimal'), ',', '.');
                 $nestedData['options'] = '<div class="btn-group">
                             <button type="button" class="btn btn-default btn-sm dropdown-toggle" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">'.trans("file.action").'
                               <span class="caret"></span>
@@ -1079,6 +1079,26 @@ class ReturnController extends Controller
                 ProductReturn::create($product_return);
         }
         $lims_return_data->update($data);
+
+        // Jurnal otomatis: edit retur (ubah item/harga) bisa mengubah grand_total
+        // dan HPP, jadi jurnal 'return' & 'return_cogs' lama dihapus lalu
+        // diposting ulang dengan angka terbaru - sama seperti alur di store().
+        try {
+            JournalService::reverseForReference('return', $lims_return_data->id);
+            JournalService::reverseForReference('return_cogs', $lims_return_data->id);
+            $retur_id = JournalService::accountIdByCode(JournalService::RETUR_PENJUALAN);
+            $credit_id = JournalService::coaIdForCashAccount($lims_return_data->account_id);
+            JournalService::postSimple($lims_return_data->created_at ?? now(), 'Retur penjualan ' . $lims_return_data->reference_no, $retur_id, $credit_id, $lims_return_data->grand_total, 'return', $lims_return_data->id);
+
+            $cogs_amount = JournalService::returnCogsAmount($lims_return_data->id);
+            if ($cogs_amount > 0) {
+                $persediaan_id = JournalService::accountIdByCode(JournalService::PERSEDIAAN);
+                $hpp_id = JournalService::accountIdByCode(JournalService::HPP);
+                JournalService::postSimple($lims_return_data->created_at ?? now(), 'Reversal HPP retur ' . $lims_return_data->reference_no, $persediaan_id, $hpp_id, $cogs_amount, 'return_cogs', $lims_return_data->id);
+            }
+        } catch (\Exception $e) {
+            // Jangan sampai kegagalan posting jurnal membatalkan update retur itu sendiri.
+        }
         $lims_customer_data = Customer::find($data['customer_id']);
         $mail_setting = MailSetting::latest()->first();
 

@@ -13,25 +13,21 @@
             </div>
             <div class="card-body">
                 <div class="row">
-                    @if(count($lims_warehouse_list) > 1)
                     <div class="col-md-3">
                         <div class="form-group">
-                            <label>{{trans('file.Warehouse')}}</label>
-                            <select id="warehouse_id" class="form-control">
-                                <option value="">- Pilih -</option>
+                            <label>{{ $warehouse_type == 'toko' ? 'Toko' : 'Gudang' }}</label>
+                            <select id="warehouse_id" class="form-control selectpicker" data-live-search="true">
+                                <option value="">- Pilih {{ $warehouse_type == 'toko' ? 'Toko' : 'Gudang' }} -</option>
                                 @foreach($lims_warehouse_list as $warehouse)
-                                <option value="{{$warehouse->id}}">{{$warehouse->name}}</option>
+                                <option value="{{$warehouse->id}}" @selected(count($lims_warehouse_list) == 1)>{{$warehouse->name}}</option>
                                 @endforeach
                             </select>
                         </div>
                     </div>
-                    @else
-                    <input type="hidden" id="warehouse_id" value="{{ count($lims_warehouse_list) ? $lims_warehouse_list[0]->id : '' }}">
-                    @endif
                     <div class="col-md-3">
                         <div class="form-group">
                             <label>Pilih Rak</label>
-                            <select id="rack_id" class="form-control">
+                            <select id="rack_id" class="form-control selectpicker" data-live-search="true">
                                 <option value="">- Pilih Rak -</option>
                             </select>
                         </div>
@@ -101,13 +97,19 @@
     var product_qty = [];
     var unit_cost = [];
     var lims_rack_array = [];
-    var rackBaseUrl = "{{url('racks/warehouse')}}";
+    var rackBaseUrl = "{{url('rak/options')}}";
     var getProductBaseUrl = "{{url('rak/getproduct')}}";
     var planDataBaseUrl = "{{url('rak/plan-data')}}";
     var planAssignUrl = "{{url('rak/plan-assign')}}";
     var planUpdateBaseUrl = "{{url('rak/plan-update')}}";
     var planRemoveBaseUrl = "{{url('rak/plan-remove')}}";
     var csrfToken = "{{csrf_token()}}";
+
+    if ($.fn.selectpicker) {
+        $('.selectpicker').selectpicker({
+            style: 'btn-link',
+        });
+    }
 
     function showMessage(text, type) {
         var $alert = $('#plan-alert');
@@ -125,6 +127,9 @@
         });
         $select.html(html);
         if (current) $select.val(current);
+        if ($.fn.selectpicker) {
+            $select.selectpicker('refresh');
+        }
     }
 
     function loadRacks(warehouse_id, callback) {
@@ -138,7 +143,10 @@
             lims_rack_array = data;
             populateRackSelect($('#rack_id'));
             if (!data || !data.length) {
-                showMessage('Belum ada rak untuk gudang/toko ini. Tambahkan dulu lewat menu Warehouse > Kelola Rak.', 'error');
+                showMessage('Belum ada rak yang terbaca untuk warehouse ini. Cek Warehouse > Kelola Rak pada warehouse yang sama.', 'error');
+            }
+            else {
+                showMessage(data.length + ' rak berhasil dimuat.', 'success');
             }
             if (callback) callback();
         }).fail(function(xhr) {
@@ -209,19 +217,25 @@
         });
     }
 
+    // Rak HARUS selesai dimuat dulu sebelum tabel plan dirender, karena setiap
+    // baris di tabel butuh lims_rack_array untuk mengisi dropdown "Rak"-nya.
+    // Kalau dijalankan paralel, ada race condition: jika respons loadPlanList
+    // datang lebih dulu dari loadRacks, dropdown rak per-baris akan kosong/
+    // tidak bisa dipilih (cuma ada opsi "- Pilih Rak -").
+    function loadWarehouseData(id) {
+        loadRacks(id, function() {
+            loadProductPool(id);
+            loadPlanList(id);
+        });
+    }
+
     $('#warehouse_id').on('change', function() {
-        var id = $(this).val();
-        loadRacks(id);
-        loadProductPool(id);
-        loadPlanList(id);
+        loadWarehouseData($(this).val());
     });
 
     // auto-load when there's only a single warehouse (hidden input case)
     if ($('#warehouse_id').val()) {
-        var initId = $('#warehouse_id').val();
-        loadRacks(initId);
-        loadProductPool(initId);
-        loadPlanList(initId);
+        loadWarehouseData($('#warehouse_id').val());
     }
 
     var lims_productcodeSearch = $('#lims_productcodeSearch');

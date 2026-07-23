@@ -66,7 +66,7 @@
                   <div class="wrapper count-title">
                     <div class="icon"><i class="dripicons-graph-bar" style="color: #733686"></i></div>
                     <div>
-                        <div class="count-number revenue-data">{{number_format((float)$revenue,$general_setting->decimal, '.', '')}}</div>
+                        <div class="count-number revenue-data">{{number_format((float)$revenue,$general_setting->decimal, ',', '.')}}</div>
                         <div class="name"><strong style="color: #733686">{{ trans('file.revenue') }}</strong></div>
                     </div>
                   </div>
@@ -76,7 +76,7 @@
                   <div class="wrapper count-title">
                     <div class="icon"><i class="dripicons-return" style="color: #ff8952"></i></div>
                     <div>
-                        <div class="count-number return-data">{{number_format((float)$return,$general_setting->decimal, '.', '')}}</div>
+                        <div class="count-number return-data">{{number_format((float)$return,$general_setting->decimal, ',', '.')}}</div>
                         <div class="name"><strong style="color: #ff8952">{{trans('file.Sale Return')}}</strong></div>
                     </div>
                   </div>
@@ -86,7 +86,7 @@
                   <div class="wrapper count-title">
                     <div class="icon"><i class="dripicons-media-loop" style="color: #00c689"></i></div>
                     <div>
-                        <div class="count-number purchase_return-data">{{number_format((float)$purchase_return,$general_setting->decimal, '.', '')}}</div>
+                        <div class="count-number purchase_return-data">{{number_format((float)$purchase_return,$general_setting->decimal, ',', '.')}}</div>
                         <div class="name"><strong style="color: #00c689">{{trans('file.Purchase Return')}}</strong></div>
                     </div>
                   </div>
@@ -96,7 +96,7 @@
                   <div class="wrapper count-title">
                     <div class="icon"><i class="dripicons-trophy" style="color: #297ff9"></i></div>
                     <div>
-                        <div class="count-number profit-data">{{number_format((float)$profit,$general_setting->decimal, '.', '')}}</div>
+                        <div class="count-number profit-data">{{number_format((float)$profit,$general_setting->decimal, ',', '.')}}</div>
                         <div class="name"><strong style="color: #297ff9">{{trans('file.profit')}}</strong></div>
                     </div>
                   </div>

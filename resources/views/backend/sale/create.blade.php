@@ -98,7 +98,7 @@
                                             </select>
                                         </div>
                                     </div>
-                                    <div class="col-md-2">
+                                    <div class="col-md-2 d-none">
                                         <div class="form-group">
                                             <label>{{trans('file.Currency')}} *</label>
                                             <select name="currency_id" id="currency" class="form-control selectpicker" data-toggle="tooltip" title="" data-original-title="Sale currency">
@@ -107,8 +107,8 @@
                                                 @endforeach
                                             </select>
                                         </div>
-                                    </div> 
-                                    <div class="col-md-2">
+                                    </div>
+                                    <div class="col-md-2 d-none">
                                         <div class="form-group mb-0">
                                             <label>{{trans('file.Exchange Rate')}} *</label>
                                         </div>
@@ -156,9 +156,9 @@
                                                     <th></th>
                                                     <th></th>
                                                     <th></th>
-                                                    <th id="total-discount">{{number_format(0, $general_setting->decimal, '.', '')}}</th>
-                                                    <th id="total-tax">{{number_format(0, $general_setting->decimal, '.', '')}}</th>
-                                                    <th id="total">{{number_format(0, $general_setting->decimal, '.', '')}}</th>
+                                                    <th id="total-discount">{{number_format(0, $general_setting->decimal, ',', '.')}}</th>
+                                                    <th id="total-tax">{{number_format(0, $general_setting->decimal, ',', '.')}}</th>
+                                                    <th id="total">{{number_format(0, $general_setting->decimal, ',', '.')}}</th>
                                                     <th><i class="dripicons-trash"></i></th>
                                                 </tfoot>
                                             </table>
@@ -370,7 +370,7 @@
                                         <div class="col-md-4">
                                             <div class="form-group">
                                                 <label>{{trans('file.Change')}}</label>
-                                                <p id="change" class="ml-2">{{number_format(0, $general_setting->decimal, '.', '')}}</p>
+                                                <p id="change" class="ml-2">{{number_format(0, $general_setting->decimal, ',', '.')}}</p>
                                             </div>
                                         </div>
                                     </div>
@@ -434,22 +434,22 @@
     <div class="container-fluid">
         <table class="table table-bordered table-condensed totals">
             <td><strong>{{trans('file.Items')}}</strong>
-                <span class="pull-right" id="item">{{number_format(0, $general_setting->decimal, '.', '')}}</span>
+                <span class="pull-right" id="item">{{number_format(0, $general_setting->decimal, ',', '.')}}</span>
             </td>
             <td><strong>{{trans('file.Total')}}</strong>
-                <span class="pull-right" id="subtotal">{{number_format(0, $general_setting->decimal, '.', '')}}</span>
+                <span class="pull-right" id="subtotal">{{number_format(0, $general_setting->decimal, ',', '.')}}</span>
             </td>
             <td><strong>{{trans('file.Order Tax')}}</strong>
-                <span class="pull-right" id="order_tax">{{number_format(0, $general_setting->decimal, '.', '')}}</span>
+                <span class="pull-right" id="order_tax">{{number_format(0, $general_setting->decimal, ',', '.')}}</span>
             </td>
             <td><strong>{{trans('file.Order Discount')}}</strong>
-                <span class="pull-right" id="order_discount">{{number_format(0, $general_setting->decimal, '.', '')}}</span>
+                <span class="pull-right" id="order_discount">{{number_format(0, $general_setting->decimal, ',', '.')}}</span>
             </td>
             <td><strong>{{trans('file.Shipping Cost')}}</strong>
-                <span class="pull-right" id="shipping_cost">{{number_format(0, $general_setting->decimal, '.', '')}}</span>
+                <span class="pull-right" id="shipping_cost">{{number_format(0, $general_setting->decimal, ',', '.')}}</span>
             </td>
             <td><strong>{{trans('file.grand total')}}</strong>
-                <span class="pull-right" id="grand_total">{{number_format(0, $general_setting->decimal, '.', '')}}</span>
+                <span class="pull-right" id="grand_total">{{number_format(0, $general_setting->decimal, ',', '.')}}</span>
             </td>
         </table>
     </div>
@@ -918,12 +918,7 @@ function isCashRegisterAvailable(warehouse_id) {
         url: 'cash-register/check-availability/' + warehouse_id,
         type: "GET",
         success: function(data) {
-            if (data.status == 'need_deposit') {
-                $("#register-details-btn").removeClass('d-none'); // biar dia bisa akses detail
-                alert(data.message);
-                $('.payment-form :input').prop('disabled', true); // kunci form penjualan
-                $("#register-details-btn").trigger('click'); // langsung buka modal detail
-            } else if (data.status == 'closed') {
+            if (data.status == 'available') {
                 $('.payment-form :input').prop('disabled', false);
                 $("#register-details-btn").addClass('d-none');
                 $('#cash-register-modal select[name=warehouse_id]').val(warehouse_id);
@@ -933,9 +928,13 @@ function isCashRegisterAvailable(warehouse_id) {
                     $("#cash-register-modal .warehouse-section").addClass('d-none');
                 $('.selectpicker').selectpicker('refresh');
                 $("#cash-register-modal").modal('show');
-            } else { // 'open'
+            } else if (data.status == 'open') {
                 $('.payment-form :input').prop('disabled', false);
                 $("#register-details-btn").removeClass('d-none');
+            } else {
+                $("#register-details-btn").addClass('d-none');
+                alert(data.message || 'Kasir belum bisa dibuka. Selesaikan setoran kasir terlebih dahulu.');
+                window.location.href = "{{route('cashRegister.index')}}";
             }
         }
     });
@@ -993,7 +992,7 @@ function productSearch(data) {
                 }
 
                 cols += '<td class="net_unit_price"></td>';
-                cols += '<td class="discount">{{number_format(0, $general_setting->decimal, '.', '')}}</td>';
+                cols += '<td class="discount">{{number_format(0, $general_setting->decimal, ',', '.')}}</td>';
                 cols += '<td class="tax"></td>';
                 cols += '<td class="sub-total"></td>';
                 cols += '<td><button type="button" class="ibtnDel btn btn-md btn-danger">{{trans("file.delete")}}</button></td>';
@@ -1267,7 +1266,7 @@ function calculateGrandTotal() {
     var order_discount_type = $('select[name="order_discount_type"]').val();
     var order_discount_value = parseFloat($('input[name="order_discount_value"]').val());
     if (!order_discount_value)
-        order_discount_value = {{number_format(0, $general_setting->decimal, '.', '')}};
+        order_discount_value = {{number_format(0, $general_setting->decimal, ',', '.')}};
 
     if(order_discount_type == 'Flat') {
         if(!currencyChange)
@@ -1279,7 +1278,7 @@ function calculateGrandTotal() {
         var order_discount = parseFloat(subtotal * (order_discount_value / 100));
 
     if (!shipping_cost)
-        shipping_cost = {{number_format(0, $general_setting->decimal, '.', '')}};
+        shipping_cost = {{number_format(0, $general_setting->decimal, ',', '.')}};
 
     item = ++item + '(' + total_qty + ')';
     order_tax = (subtotal - order_discount) * (order_tax / 100);

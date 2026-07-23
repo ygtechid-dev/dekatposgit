@@ -347,12 +347,12 @@ class SaleController extends Controller
                 else
                     $nestedData['delivery_status'] = 'N/A';
 
-                $nestedData['grand_total'] = number_format($sale->grand_total, config('decimal'));
+                $nestedData['grand_total'] = number_format($sale->grand_total, config('decimal'), ',', '.');
                 //$nestedData['grand_total'] = \Illuminate\Support\Number::format($sale->grand_total, locale: 'id');
                 $returned_amount = DB::table('returns')->where('sale_id', $sale->id)->sum('grand_total');
-                $nestedData['returned_amount'] = number_format($returned_amount, config('decimal'));
-                $nestedData['paid_amount'] = number_format($sale->paid_amount, config('decimal'));
-                $nestedData['due'] = number_format($sale->grand_total - $returned_amount - $sale->paid_amount, config('decimal'));
+                $nestedData['returned_amount'] = number_format($returned_amount, config('decimal'), ',', '.');
+                $nestedData['paid_amount'] = number_format($sale->paid_amount, config('decimal'), ',', '.');
+                $nestedData['due'] = number_format($sale->grand_total - $returned_amount - $sale->paid_amount, config('decimal'), ',', '.');
                 //fetching custom fields data
                 foreach($field_names as $field_name) {
                     $nestedData[$field_name] = $sale->$field_name;
@@ -2265,6 +2265,26 @@ class SaleController extends Controller
                 Product_Sale::create($product_sale);
         }
         $lims_sale_data->update($data);
+
+        // Jurnal otomatis: edit sale (ubah item/harga) bisa mengubah grand_total
+        // dan HPP, jadi jurnal 'sale' & 'sale_cogs' lama dihapus lalu diposting
+        // ulang dengan angka terbaru - sama seperti alur di store().
+        try {
+            JournalService::reverseForReference('sale', $lims_sale_data->id);
+            JournalService::reverseForReference('sale_cogs', $lims_sale_data->id);
+            $piutang_id = JournalService::accountIdByCode(JournalService::PIUTANG_USAHA);
+            $penjualan_id = JournalService::accountIdByCode(JournalService::PENJUALAN);
+            JournalService::postSimple($lims_sale_data->created_at, 'Penjualan ' . $lims_sale_data->reference_no, $piutang_id, $penjualan_id, $lims_sale_data->grand_total, 'sale', $lims_sale_data->id);
+
+            $cogs_amount = JournalService::saleCogsAmount($lims_sale_data->id);
+            if ($cogs_amount > 0) {
+                $hpp_id = JournalService::accountIdByCode(JournalService::HPP);
+                $persediaan_id = JournalService::accountIdByCode(JournalService::PERSEDIAAN);
+                JournalService::postSimple($lims_sale_data->created_at, 'HPP Penjualan ' . $lims_sale_data->reference_no, $hpp_id, $persediaan_id, $cogs_amount, 'sale_cogs', $lims_sale_data->id);
+            }
+        } catch (\Exception $e) {
+            // Jangan sampai kegagalan posting jurnal membatalkan update sale itu sendiri.
+        }
         //inserting data for custom fields
         $custom_field_data = [];
         $custom_fields = CustomField::where('belongs_to', 'sale')->select('name', 'type')->get();

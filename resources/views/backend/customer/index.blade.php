@@ -77,8 +77,8 @@
                         @endforeach
                     </td>
                     <td>{{$customer->points}}</td>
-                    <td>{{number_format($customer->deposit - $customer->expense, 2)}}</td>
-                    <td>{{number_format($saleData->grand_total - $returned_amount - $saleData->paid_amount, 2)}}</td>
+                    <td>{{number_format($customer->deposit - $customer->expense, 2, ',', '.')}}</td>
+                    <td>{{number_format($saleData->grand_total - $returned_amount - $saleData->paid_amount, 2, ',', '.')}}</td>
                     @foreach($custom_fields as $fieldName)
                     @php $field_name = str_replace(" ", "_", strtolower($fieldName)); @endphp
                     <td>{{$customer->$field_name}}</td>

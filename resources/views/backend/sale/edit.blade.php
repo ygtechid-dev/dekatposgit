@@ -169,10 +169,10 @@
                                                         </td>
                                                         <td>N/A</td>
                                                         @endif
-                                                        <td class="net_unit_price">{{ number_format((float)$product_sale->net_unit_price, $general_setting->decimal, '.', '')}} </td>
-                                                        <td class="discount">{{ number_format((float)$product_sale->discount, $general_setting->decimal, '.', '')}}</td>
-                                                        <td class="tax">{{ number_format((float)$product_sale->tax, $general_setting->decimal, '.', '')}}</td>
-                                                        <td class="sub-total">{{ number_format((float)$product_sale->total, $general_setting->decimal, '.', '')}}</td>
+                                                        <td class="net_unit_price">{{ number_format((float)$product_sale->net_unit_price, $general_setting->decimal, ',', '.')}} </td>
+                                                        <td class="discount">{{ number_format((float)$product_sale->discount, $general_setting->decimal, ',', '.')}}</td>
+                                                        <td class="tax">{{ number_format((float)$product_sale->tax, $general_setting->decimal, ',', '.')}}</td>
+                                                        <td class="sub-total">{{ number_format((float)$product_sale->total, $general_setting->decimal, ',', '.')}}</td>
                                                         <td><button type="button" class="ibtnDel btn btn-md btn-danger">{{trans("file.delete")}}</button></td>
                                                         <input type="hidden" class="product-code" name="product_code[]" value="{{$product_data->code}}"/>
                                                         <input type="hidden" class="product-id" name="product_id[]" value="{{$product_data->id}}"/>
@@ -202,9 +202,9 @@
                                                     <th></th>
                                                     <th></th>
                                                     <th></th>
-                                                    <th id="total-discount">{{ number_format((float)$lims_sale_data->total_discount, $general_setting->decimal, '.', '')}}</th>
-                                                    <th id="total-tax">{{ number_format((float)$lims_sale_data->total_tax, $general_setting->decimal, '.', '')}}</th>
-                                                    <th id="total">{{ number_format((float)$lims_sale_data->total_price, $general_setting->decimal, '.', '')}}</th>
+                                                    <th id="total-discount">{{ number_format((float)$lims_sale_data->total_discount, $general_setting->decimal, ',', '.')}}</th>
+                                                    <th id="total-tax">{{ number_format((float)$lims_sale_data->total_tax, $general_setting->decimal, ',', '.')}}</th>
+                                                    <th id="total">{{ number_format((float)$lims_sale_data->total_price, $general_setting->decimal, ',', '.')}}</th>
                                                     <th><i class="dripicons-trash"></i></th>
                                                 </tfoot>
                                             </table>
@@ -387,7 +387,7 @@
                                             <label>
                                                 <strong>{{trans('file.Coupon Discount')}}</strong>
                                             </label>
-                                            <p class="mt-2 pl-2"><strong id="coupon-text">{{ number_format((float)$lims_sale_data->coupon_discount, $general_setting->decimal, '.', '')}}</strong></p>
+                                            <p class="mt-2 pl-2"><strong id="coupon-text">{{ number_format((float)$lims_sale_data->coupon_discount, $general_setting->decimal, ',', '.')}}</strong></p>
                                         </div>
                                     </div>
                                     @endif
@@ -424,22 +424,22 @@
     <div class="container-fluid">
         <table class="table table-bordered table-condensed totals">
             <td><strong>{{trans('file.Items')}}</strong>
-                <span class="pull-right" id="item">{{number_format(0, $general_setting->decimal, '.', '')}}</span>
+                <span class="pull-right" id="item">{{number_format(0, $general_setting->decimal, ',', '.')}}</span>
             </td>
             <td><strong>{{trans('file.Total')}}</strong>
-                <span class="pull-right" id="subtotal">{{number_format(0, $general_setting->decimal, '.', '')}}</span>
+                <span class="pull-right" id="subtotal">{{number_format(0, $general_setting->decimal, ',', '.')}}</span>
             </td>
             <td><strong>{{trans('file.Order Tax')}}</strong>
-                <span class="pull-right" id="order_tax">{{number_format(0, $general_setting->decimal, '.', '')}}</span>
+                <span class="pull-right" id="order_tax">{{number_format(0, $general_setting->decimal, ',', '.')}}</span>
             </td>
             <td><strong>{{trans('file.Order Discount')}}</strong>
-                <span class="pull-right" id="order_discount">{{number_format(0, $general_setting->decimal, '.', '')}}</span>
+                <span class="pull-right" id="order_discount">{{number_format(0, $general_setting->decimal, ',', '.')}}</span>
             </td>
             <td><strong>{{trans('file.Shipping Cost')}}</strong>
-                <span class="pull-right" id="shipping_cost">{{number_format(0, $general_setting->decimal, '.', '')}}</span>
+                <span class="pull-right" id="shipping_cost">{{number_format(0, $general_setting->decimal, ',', '.')}}</span>
             </td>
             <td><strong>{{trans('file.grand total')}}</strong>
-                <span class="pull-right" id="grand_total">{{number_format(0, $general_setting->decimal, '.', '')}}</span>
+                <span class="pull-right" id="grand_total">{{number_format(0, $general_setting->decimal, ',', '.')}}</span>
             </td>
         </table>
     </div>
@@ -896,7 +896,7 @@
                     }
 
                     cols += '<td class="net_unit_price"></td>';
-                    cols += '<td class="discount">{{number_format(0, $general_setting->decimal, '.', '')}}</td>';
+                    cols += '<td class="discount">{{number_format(0, $general_setting->decimal, ',', '.')}}</td>';
                     cols += '<td class="tax"></td>';
                     cols += '<td class="sub-total"></td>';
                     cols += '<td><button type="button" class="ibtnDel btn btn-md btn-danger">{{trans("file.delete")}}</button></td>';
@@ -1158,7 +1158,7 @@
         var order_discount_value = parseFloat($('input[name="order_discount_value"]').val());
 
         if (!order_discount_value)
-            order_discount_value = {{number_format(0, $general_setting->decimal, '.', '')}};
+            order_discount_value = {{number_format(0, $general_setting->decimal, ',', '.')}};
 
         if(order_discount_type == 'Flat')
             var order_discount = parseFloat(order_discount_value);
@@ -1168,7 +1168,7 @@
         $('input[name="order_discount"]').val(order_discount);
 
         if (!shipping_cost)
-            shipping_cost = {{number_format(0, $general_setting->decimal, '.', '')}};
+            shipping_cost = {{number_format(0, $general_setting->decimal, ',', '.')}};
 
         item = ++item + '(' + total_qty + ')';
         order_tax = (subtotal - order_discount) * (order_tax / 100);
@@ -1178,7 +1178,7 @@
             couponDiscount();
             var coupon_discount = parseFloat($('input[name="coupon_discount"]').val());
             if (!coupon_discount)
-                coupon_discount = {{number_format(0, $general_setting->decimal, '.', '')}};
+                coupon_discount = {{number_format(0, $general_setting->decimal, ',', '.')}};
             grand_total -= coupon_discount;
         }
 

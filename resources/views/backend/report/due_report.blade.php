@@ -45,10 +45,10 @@
                 <th>{{trans('file.Total')}}:</th>
                 <th></th>
                 <th></th>
-                <th>{{number_format(0, $general_setting->decimal, '.', '')}}</th>
-                <th>{{number_format(0, $general_setting->decimal, '.', '')}}</th>
-                <th>{{number_format(0, $general_setting->decimal, '.', '')}}</th>
-                <th>{{number_format(0, $general_setting->decimal, '.', '')}}</th>
+                <th>{{number_format(0, $general_setting->decimal, ',', '.')}}</th>
+                <th>{{number_format(0, $general_setting->decimal, ',', '.')}}</th>
+                <th>{{number_format(0, $general_setting->decimal, ',', '.')}}</th>
+                <th>{{number_format(0, $general_setting->decimal, ',', '.')}}</th>
             </tfoot>
         </table>
     </div>

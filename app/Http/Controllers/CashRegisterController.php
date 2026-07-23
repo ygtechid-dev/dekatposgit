@@ -8,6 +8,7 @@ use App\Models\Sale;
 use App\Models\Payment;
 use App\Models\Returns;
 use App\Models\Expense;
+use App\Services\JournalService;
 use Auth;
 
 class CashRegisterController extends Controller
@@ -73,12 +74,20 @@ class CashRegisterController extends Controller
         if (Auth::user()->role_id <= 2) {
             $lims_cash_register_all = CashRegister::with('user', 'warehouse', 'approver')->get();
             return view('backend.cash_register.index', compact('lims_cash_register_all'));
-        } else
-            return redirect()->back()->with('not_permitted', 'Sorry! You are not allowed to access this module');
+        } else {
+            $lims_cash_register_all = CashRegister::with('user', 'warehouse', 'approver')
+                ->where('user_id', Auth::id())
+                ->get();
+            return view('backend.cash_register.index', compact('lims_cash_register_all'));
+        }
     }
     public function store(Request $request)
     {
         $data = $request->all();
+        $availability = $this->availabilityStatus($data['warehouse_id']);
+        if ($availability['status'] != 'available') {
+            return redirect()->back()->with('not_permitted', $availability['message']);
+        }
         $data['status'] = true;
         $data['user_id'] = Auth::id();
         $data['approval_status'] = 'open';
@@ -155,6 +164,21 @@ class CashRegisterController extends Controller
         $cash_register_data->approved_at = date('Y-m-d H:i:s');
         $cash_register_data->approval_note = $request->approval_note;
         $cash_register_data->save();
+
+        try {
+            JournalService::reverseForReference('cash_register_deposit', $cash_register_data->id);
+            $kas_id = JournalService::accountIdByCode(JournalService::KAS);
+            $selisih_id = JournalService::accountIdByCode(JournalService::SELISIH_KASIR);
+            JournalService::postSimple(
+                $cash_register_data->approved_at,
+                'Approve setoran kasir #' . $cash_register_data->id,
+                $kas_id,
+                $selisih_id,
+                $cash_register_data->deposit_amount,
+                'cash_register_deposit',
+                $cash_register_data->id
+            );
+        } catch (\Exception $e) {}
         return redirect()->back()->with('message', 'Cashier deposit approved successfully');
     }
 
@@ -165,30 +189,65 @@ class CashRegisterController extends Controller
         return view('backend.cash_register.print', compact('cash_register_data', 'details'));
     }
 
+    private function availabilityStatus($warehouse_id)
+    {
+        $today = date('Y-m-d');
+        $open_register = CashRegister::where([
+                ['user_id', Auth::id()],
+                ['warehouse_id', $warehouse_id],
+                ['status', true]
+            ])->latest('id')->first();
+
+        if ($open_register) {
+            if (date('Y-m-d', strtotime($open_register->created_at)) < $today) {
+                return [
+                    'status' => 'need_deposit',
+                    'message' => 'Kasir sebelumnya belum ditutup/setor dan sudah melewati hari. Tutup kasir dan selesaikan setoran terlebih dahulu.',
+                    'cash_register_id' => $open_register->id,
+                ];
+            }
+            return ['status' => 'open', 'message' => 'Kasir sudah terbuka.', 'cash_register_id' => $open_register->id];
+        }
+
+        $closed_today = CashRegister::where([
+                ['user_id', Auth::id()],
+                ['warehouse_id', $warehouse_id],
+                ['status', false]
+            ])
+            ->whereDate('created_at', $today)
+            ->latest('id')
+            ->first();
+
+        if ($closed_today) {
+            return [
+                'status' => 'closed_today',
+                'message' => 'Kasir hari ini sudah tutup/setor. Kasir yang sudah tutup dan setor di hari yang sama tidak bisa dibuka lagi.',
+                'cash_register_id' => $closed_today->id,
+            ];
+        }
+
+        $pending_deposit = CashRegister::where([
+                ['user_id', Auth::id()],
+                ['warehouse_id', $warehouse_id],
+                ['status', false]
+            ])
+            ->where('approval_status', '!=', 'approved')
+            ->latest('id')
+            ->first();
+
+        if ($pending_deposit) {
+            return [
+                'status' => 'need_deposit',
+                'message' => 'Anda masih punya setoran kasir yang belum selesai/approve. Selesaikan setoran terlebih dahulu sebelum membuka kasir baru.',
+                'cash_register_id' => $pending_deposit->id,
+            ];
+        }
+
+        return ['status' => 'available', 'message' => 'Silakan input modal awal kasir.'];
+    }
+
     public function checkAvailability($warehouse_id)
-{
-    $open_register = CashRegister::where([
-                        ['user_id', Auth::id()],
-                        ['warehouse_id', $warehouse_id],
-                        ['status', true]
-                    ])->first();
-
-    if ($open_register) {
-        return response()->json(['status' => 'open']);
+    {
+        return response()->json($this->availabilityStatus($warehouse_id));
     }
-
-    $last_closed = CashRegister::where([
-                        ['user_id', Auth::id()],
-                        ['warehouse_id', $warehouse_id],
-                        ['status', false]
-                    ])->latest('id')->first();
-
-    if ($last_closed && $last_closed->approval_status != 'approved') {
-        return response()->json([
-            'status'  => 'need_deposit',
-            'message' => 'Anda belum menyelesaikan setoran kasir shift sebelumnya (status: menunggu persetujuan). Silakan selesaikan setoran terlebih dahulu sebelum membuka kasir baru.',
-        ]);
-    }
-
-    return response()->json(['status' => 'closed']);
 }
