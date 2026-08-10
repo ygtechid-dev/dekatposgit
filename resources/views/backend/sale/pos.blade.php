@@ -1468,6 +1468,28 @@ function getSavedValue  (v) {
     return localStorage.getItem(v);
 }
 
+// Anti mati lampu: save all localStorage arrays + tbody HTML snapshot
+function saveAllLocalStorage() {
+    if (typeof localStorageProductId !== 'undefined') {
+        localStorage.setItem("localStorageProductId", localStorageProductId);
+        localStorage.setItem("localStorageQty", localStorageQty);
+        localStorage.setItem("localStorageSaleUnit", localStorageSaleUnit);
+        localStorage.setItem("localStorageProductCode", localStorageProductCode);
+        localStorage.setItem("localStorageProductDiscount", localStorageProductDiscount);
+        localStorage.setItem("localStorageTaxRate", localStorageTaxRate);
+        localStorage.setItem("localStorageTaxName", localStorageTaxName);
+        localStorage.setItem("localStorageTaxMethod", localStorageTaxMethod);
+        localStorage.setItem("localStorageTempUnitName", localStorageTempUnitName);
+        localStorage.setItem("localStorageSaleUnitOperator", localStorageSaleUnitOperator);
+        localStorage.setItem("localStorageSaleUnitOperationValue", localStorageSaleUnitOperationValue);
+        localStorage.setItem("localStorageNetUnitPrice", localStorageNetUnitPrice);
+        localStorage.setItem("localStorageTaxValue", localStorageTaxValue);
+        localStorage.setItem("localStorageSubTotalUnit", localStorageSubTotalUnit);
+        localStorage.setItem("localStorageSubTotal", localStorageSubTotal);
+        localStorage.setItem("tbody-id", $("table.order-list tbody").html());
+    }
+}
+
 if(getSavedValue("localStorageQty")) {
   localStorageQty = getSavedValue("localStorageQty").split(",");
   localStorageProductDiscount = getSavedValue("localStorageProductDiscount").split(",");
@@ -1523,6 +1545,18 @@ if(getSavedValue("localStorageQty")) {
     //calculateRowProductData(localStorageQty[i]);
   }
 }
+
+// Auto-save on page close/refresh (anti mati lampu)
+window.addEventListener('beforeunload', function(e) {
+  if ($('#tbody-id tr').length > 0) {
+    saveAllLocalStorage();
+    e.preventDefault();
+    e.returnValue = '';
+  }
+});
+window.addEventListener('pagehide', function() {
+  if ($('#tbody-id tr').length > 0) saveAllLocalStorage();
+});
 
 
 $('.selectpicker').selectpicker({

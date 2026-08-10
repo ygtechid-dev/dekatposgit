@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python3 -c ' *)",
+      "Bash(python3 /tmp/fix_adjustment.py)",
+      "Bash(python3 /tmp/fix_returns.py)",
+      "Bash(python3 /tmp/fix_all_returns.py)",
+      "Bash(python3 /tmp/fix_sale_create.py)",
+      "Bash(python3 /tmp/fix_transfer.py)",
+      "Bash(python3 /tmp/fix_purchase.py)"
+    ],
+    "additionalDirectories": [
+      "/tmp",
+      "/private/tmp"
+    ]
+  }
+}

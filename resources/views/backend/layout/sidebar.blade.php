@@ -184,6 +184,7 @@
                 @endif
                 @if($balance_sheet_permission_active)
                 <li id="balance-sheet-menu"><a href="{{route('accounts.balancesheet')}}">{{trans('file.Balance Sheet')}}</a></li>
+                <li id="general-ledger-menu"><a href="{{route('general_ledger')}}">Buku Besar</a></li>
                 @endif
                 @if($account_statement_permission_active)
                 <li id="account-statement-menu"><a id="account-statement" href="">{{trans('file.Account Statement')}}</a></li>

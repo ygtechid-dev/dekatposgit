@@ -302,7 +302,16 @@ lims_productcodeSearch.autocomplete({
 });
 
 //Change quantity
-$("#myTable").on('input', '.qty', function() {
+$("#myTable").on('keydown', '.qty', function(e) {
+	    if (e.which == 13) {
+	        e.preventDefault();
+	        $('#lims_productcodeSearch').focus().select();
+	    }
+	});
+	$("#myTable").on('focus', '.qty', function() {
+	    window.lastTransferRow = $(this).closest('tr').index();
+	});
+	$("#myTable").on('input', '.qty', function() {
     rowindex = $(this).closest('tr').index();
     checkQuantity($(this).val(), true);
 });
@@ -397,6 +406,7 @@ function productSearch(data){
                     var qty = parseFloat($('table.order-list tbody tr:nth-child(' + (rowindex + 1) + ') .qty').val()) + 1;
                     $('table.order-list tbody tr:nth-child(' + (rowindex + 1) + ') .qty').val(qty);
                     checkQuantity(String(qty), true);
+                    saveTransferToStorage();
                     flag = 0;
                 }
             });
@@ -437,6 +447,8 @@ function productSearch(data){
                 unit_operation_value.splice(rowindex, 0, data[8]);
                 is_imei.splice(rowindex, 0, data[12]);
                 checkQuantity(1, true);
+                saveTransferToStorage();
+                $('table.order-list tbody tr:first .qty').focus().select();
                 if(data[12]) {
                     $('table.order-list tbody tr:nth-child(' + (rowindex + 1) + ')').find('.edit-product').click();
                 }

@@ -427,6 +427,7 @@ class PurchaseController extends Controller
         $product[] = $lims_product_data->id;
         $product[] = $lims_product_data->is_batch;
         $product[] = $lims_product_data->is_imei;
+        $product[] = $lims_product_data->price;
         return $product;
     }
 

@@ -112,7 +112,61 @@
 	    style: 'btn-link',
 	});
 
+	// === LOCAL STORAGE PERSISTENCE ===
+	var PREFIX = 'adjustment_form_';
 
+	function saveAdjustmentToStorage() {
+		localStorage.setItem(PREFIX + 'tbody', $('#myTable tbody').html());
+		var warehouse = $('#warehouse_id').val();
+		if (warehouse) localStorage.setItem(PREFIX + 'warehouse_id', warehouse);
+		var note = $('textarea[name="note"]').val();
+		if (note) localStorage.setItem(PREFIX + 'note', note);
+	}
+
+	function loadAdjustmentFromStorage() {
+		var tbody = localStorage.getItem(PREFIX + 'tbody');
+		if (!tbody) return;
+		$('#myTable tbody').html(tbody);
+		var warehouse = localStorage.getItem(PREFIX + 'warehouse_id');
+		if (warehouse) {
+			$('#warehouse_id').val(warehouse);
+			$('#warehouse_id').selectpicker('refresh');
+			$.get('getproduct/' + warehouse, function(data) {
+				lims_product_array = [];
+				product_code = data[0];
+				product_name = data[1];
+				product_qty = data[2];
+				unit_cost = data[3];
+				$.each(product_code, function(index) {
+					lims_product_array.push(product_code[index] + ' (' + product_name[index] + ')' + '|' + unit_cost[index]);
+				});
+			});
+		}
+		var note = localStorage.getItem(PREFIX + 'note');
+		if (note) $('textarea[name="note"]').val(note);
+		calculateTotal();
+	}
+
+	function clearAdjustmentStorage() {
+		Object.keys(localStorage).filter(function(k) { return k.indexOf(PREFIX) === 0; }).forEach(function(k) { localStorage.removeItem(k); });
+	}
+
+	window.addEventListener('beforeunload', function(e) {
+		if ($('#myTable tbody tr').length > 0) {
+			saveAdjustmentToStorage();
+			e.preventDefault(); e.returnValue = '';
+		}
+	});
+	window.addEventListener('pagehide', function() {
+		if ($('#myTable tbody tr').length > 0) saveAdjustmentToStorage();
+	});
+
+	$(document).ready(function() { loadAdjustmentFromStorage(); });
+
+	@if(session()->has('message') && !session()->has('not_permitted'))
+		clearAdjustmentStorage();
+	@endif
+	// === END LOCAL STORAGE ===
 
 	$('select[name="warehouse_id"]').on('change', function() {
 	    var id = $(this).val();
@@ -153,12 +207,14 @@
 	$("#myTable").on('input', '.qty', function() {
 	    rowindex = $(this).closest('tr').index();
 	    checkQuantity($(this).val(), true);
+	    saveAdjustmentToStorage();
 	});
 
 	$("table.order-list tbody").on("click", ".ibtnDel", function(event) {
 	    rowindex = $(this).closest('tr').index();
 	    $(this).closest("tr").remove();
 	    calculateTotal();
+	    saveAdjustmentToStorage();
 	});
 
 	$(window).keydown(function(e){
@@ -224,6 +280,7 @@
                     $("table.order-list tbody").append(newRow);
                     rowindex = newRow.index();
                     calculateTotal();
+                    saveAdjustmentToStorage();
                 }
             }
         });

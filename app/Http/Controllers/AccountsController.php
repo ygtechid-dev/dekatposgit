@@ -202,6 +202,95 @@ class AccountsController extends Controller
         return view('backend.account.account_statement', compact('lims_account_data', 'all_transaction_list', 'balance'));
     }
 
+    public function generalLedger(Request $request)
+    {
+        $role = Role::find(Auth::user()->role_id);
+        if(!$role->hasPermissionTo('balance-sheet')){
+            return redirect()->back()->with('not_permitted', 'Sorry! You are not allowed to access this module');
+        }
+
+        $start_date = $request->start_date ?? date('Y-m-01');
+        $end_date = $request->end_date ?? date('Y-m-d');
+
+        $lims_account_list = Account::where('is_active', true)->get();
+        $all_transactions = [];
+
+        foreach ($lims_account_list as $account) {
+            // Credit transactions
+            $credit_payments = Payment::whereNotNull('sale_id')
+                                ->where('account_id', $account->id)
+                                ->whereDate('created_at', '>=', $start_date)
+                                ->whereDate('created_at', '<=', $end_date)
+                                ->selectRaw("payment_reference as reference_no, sale_id as related_id, 'sale' as related_type, amount, 0 as debit, amount as credit, created_at")
+                                ->get();
+
+            $recieved_transfers = MoneyTransfer::where('to_account_id', $account->id)
+                                        ->whereDate('created_at', '>=', $start_date)
+                                        ->whereDate('created_at', '<=', $end_date)
+                                        ->selectRaw("reference_no, null as related_id, 'money_transfer_in' as related_type, amount, 0 as debit, amount as credit, created_at")
+                                        ->get();
+
+            $purchase_returns = ReturnPurchase::where('account_id', $account->id)
+                                    ->whereDate('created_at', '>=', $start_date)
+                                    ->whereDate('created_at', '<=', $end_date)
+                                    ->selectRaw("reference_no, null as related_id, 'purchase_return' as related_type, grand_total as amount, 0 as debit, grand_total as credit, created_at")
+                                    ->get();
+
+            // Debit transactions
+            $debit_payments = Payment::whereNotNull('purchase_id')
+                                ->where('account_id', $account->id)
+                                ->whereDate('created_at', '>=', $start_date)
+                                ->whereDate('created_at', '<=', $end_date)
+                                ->selectRaw("payment_reference as reference_no, purchase_id as related_id, 'purchase' as related_type, amount, amount as debit, 0 as credit, created_at")
+                                ->get();
+
+            $expenses = Expense::where('account_id', $account->id)
+                            ->whereDate('created_at', '>=', $start_date)
+                            ->whereDate('created_at', '<=', $end_date)
+                            ->selectRaw("reference_no, null as related_id, 'expense' as related_type, amount, amount as debit, 0 as credit, created_at")
+                            ->get();
+
+            $sale_returns = Returns::where('account_id', $account->id)
+                            ->whereDate('created_at', '>=', $start_date)
+                            ->whereDate('created_at', '<=', $end_date)
+                            ->selectRaw("reference_no, null as related_id, 'sale_return' as related_type, grand_total as amount, grand_total as debit, 0 as credit, created_at")
+                            ->get();
+
+            $payrolls = Payroll::where('account_id', $account->id)
+                            ->whereDate('created_at', '>=', $start_date)
+                            ->whereDate('created_at', '<=', $end_date)
+                            ->selectRaw("reference_no, null as related_id, 'payroll' as related_type, amount, amount as debit, 0 as credit, created_at")
+                            ->get();
+
+            $sent_transfers = MoneyTransfer::where('from_account_id', $account->id)
+                                        ->whereDate('created_at', '>=', $start_date)
+                                        ->whereDate('created_at', '<=', $end_date)
+                                        ->selectRaw("reference_no, to_account_id as related_id, 'money_transfer_out' as related_type, amount, amount as debit, 0 as credit, created_at")
+                                        ->get();
+
+            $account_transactions = $credit_payments->concat($recieved_transfers)
+                                    ->concat($purchase_returns)
+                                    ->concat($debit_payments)
+                                    ->concat($expenses)
+                                    ->concat($sale_returns)
+                                    ->concat($payrolls)
+                                    ->concat($sent_transfers);
+
+            foreach ($account_transactions as $trx) {
+                $trx->account_name = $account->name;
+                $trx->account_no = $account->account_no;
+                $all_transactions[] = $trx;
+            }
+        }
+
+        // Sort all by date desc
+        usort($all_transactions, function($a, $b) {
+            return strtotime($b->created_at) - strtotime($a->created_at);
+        });
+
+        return view('backend.account.general_ledger', compact('lims_account_list', 'all_transactions', 'start_date', 'end_date'));
+    }
+
     public function destroy($id)
     {
         if(!env('USER_VERIFIED'))

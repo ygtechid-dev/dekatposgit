@@ -2,7 +2,10 @@
 
 <section class="forms">
     <div class="container-fluid">
-        <h3>{{trans('file.Balance Sheet')}}</h3>
+        <div class="d-flex justify-content-between align-items-center">
+            <h3>{{trans('file.Balance Sheet')}}</h3>
+            <a href="{{ route('general_ledger') }}" class="btn btn-info btn-sm"><i class="fa fa-book"></i> Buku Besar</a>
+        </div>
     </div>
     <div class="table-responsive mb-4">
         <table id="account-table" class="table table-hover">

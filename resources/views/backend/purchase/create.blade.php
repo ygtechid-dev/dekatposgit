@@ -370,6 +370,7 @@
     var rowindex;
     var customer_group_rate;
     var row_product_cost;
+    var pendingProduct = null;
     var currency = <?php echo json_encode($currency) ?>;
     var exchangeRate = 1;
     var currencyChange = false;
@@ -498,6 +499,21 @@
         calculateTotal();
     });
 
+    // === ENTER-KEY MODAL FLOW (Item 1) ===
+    $('#editModal').on('keydown', 'input, select', function(e) {
+        if (e.which == 13) {
+            e.preventDefault();
+            var $inputs = $('#editModal input:visible:not([disabled]):not([readonly]), #editModal select:visible');
+            var idx = $inputs.index(this);
+            if (idx < $inputs.length - 1) {
+                $inputs.eq(idx + 1).focus().select();
+            } else {
+                $('button[name="update_btn"]').click();
+            }
+        }
+    });
+    // === END ENTER-KEY MODAL FLOW ===
+
     //Edit product
     $("table.order-list").on("click", ".edit-product", function() {
     rowindex = $(this).closest('tr').index();
@@ -559,6 +575,18 @@
             alert("Quantity can't be less than 1");
         }
 
+        // HPP INCREASE WARNING (Item 1)
+        if (pendingProduct && parseFloat(edit_unit_cost) > parseFloat(pendingProduct[2])) {
+            var sellingPrice = pendingProduct[12] || 0;
+            if (parseFloat(edit_unit_cost) >= parseFloat(sellingPrice)) {
+                var msg = 'HPP baru (Rp ' + parseFloat(edit_unit_cost).toFixed(2) + ') melebihi atau sama dengan harga jual (Rp ' + parseFloat(sellingPrice).toFixed(2) + ').\n\nApakah Anda ingin mengupdate harga jual produk ini?';
+                if (confirm(msg)) {
+                    alert('Silakan update harga jual produk di menu Produk setelah pembelian ini.');
+                }
+            }
+        }
+        pendingProduct = null;
+
         var row_unit_operator = unit_operator[rowindex].slice(0, unit_operator[rowindex].indexOf(","));
         var row_unit_operation_value = unit_operation_value[rowindex].slice(0, unit_operation_value[rowindex].indexOf(","));
         row_unit_operation_value = parseFloat(row_unit_operation_value);
@@ -590,6 +618,9 @@
         unit_operator[rowindex] = temp_unit_operator.toString() + ',';
         unit_operation_value[rowindex] = temp_unit_operation_value.toString() + ',';
         checkQuantity(edit_qty, false);
+        savePurchaseToStorage();
+        // Focus back to product search for next scan
+        setTimeout(function() { $('#lims_productcodeSearch').focus().select(); }, 300);
     });
 
     function productSearch(data) {
@@ -610,14 +641,51 @@
                             $('table.order-list tbody tr:nth-child(' + (rowindex + 1) + ') .recieved').val(qty);
                         }
                         calculateRowProductData(qty);
+                        savePurchaseToStorage();
                         flag = 0;
                     }
                 });
                 $("input[name='product_code_name']").val('');
                 if(flag){
+                    // === ITEM 1 FLOW: Show edit modal for new product ===
+                    pendingProduct = data;
+                    temp_unit_name = (data[6]).split(',');
+                    temp_unit_operator = (data[7]).split(',');
+                    temp_unit_operation_value = (data[8]).split(',');
+                    temp_unit_operator.pop();
+                    temp_unit_operation_value.pop();
+                    temp_unit_name.pop();
+
+                    // Pre-populate modal
+                    var modal_header = data[0] + '(' + data[1] + ')';
+                    $('#modal-header').text(modal_header);
+                    $('input[name="edit_qty"]').val(1);
+                    $('input[name="edit_discount"]').val(0);
+                    $('input[name="edit_unit_cost"]').val(parseFloat(data[2]).toFixed({{$general_setting->decimal}}));
+
+                    var tax_name_all = <?php echo json_encode($tax_name_all) ?>;
+                    $('select[name="edit_tax_rate"]').val(0);
+
+                    $('select[name="edit_unit"]').empty();
+                    $.each(temp_unit_name, function(key, value) {
+                        $('select[name="edit_unit"]').append('<option value="' + key + '">' + value + '</option>');
+                    });
+
+                    // Prepare for product arrays
+                    product_cost.splice(0, 0, parseFloat(data[2]));
+                    product_discount.splice(0, 0, '{{number_format(0, $general_setting->decimal, '.', '')}}');
+                    tax_rate.splice(0, 0, parseFloat(data[3]));
+                    tax_name.splice(0, 0, data[4]);
+                    tax_method.splice(0, 0, data[5]);
+                    unit_name.splice(0, 0, data[6]);
+                    unit_operator.splice(0, 0, data[7]);
+                    unit_operation_value.splice(0, 0, data[8]);
+                    is_imei.splice(0, 0, data[11]);
+                    rowindex = 0;
+
+                    // Now add the row to table
                     var newRow = $("<tr>");
                     var cols = '';
-                    temp_unit_name = (data[6]).split(',');
                     cols += '<td>' + data[0] + '<button type="button" class="edit-product btn btn-link" data-toggle="modal" data-target="#editModal"> <i class="dripicons-document-edit"></i></button></td>';
                     cols += '<td>' + data[1] + '</td>';
                     cols += '<td><input type="text" class="form-control qty" name="qty[]" value="1" required/></td>';
@@ -655,17 +723,13 @@
                     newRow.append(cols);
                     $("table.order-list tbody").prepend(newRow);
 
-                    rowindex = newRow.index();
-                    product_cost.splice(rowindex,0, parseFloat(data[2]));
-                    product_discount.splice(rowindex,0, '{{number_format(0, $general_setting->decimal, '.', '')}}');
-                    tax_rate.splice(rowindex,0, parseFloat(data[3]));
-                    tax_name.splice(rowindex,0, data[4]);
-                    tax_method.splice(rowindex,0, data[5]);
-                    unit_name.splice(rowindex,0, data[6]);
-                    unit_operator.splice(rowindex,0, data[7]);
-                    unit_operation_value.splice(rowindex,0, data[8]);
-                    is_imei.splice(rowindex, 0, data[11]);
                     checkQuantity(1, true);
+                    savePurchaseToStorage();
+
+                    // Show modal and focus unit select for Enter-key flow
+                    $('#editModal').modal('show');
+                    setTimeout(function() { $('select[name="edit_unit"]').focus(); }, 500);
+
                     if(data[11]) {
                         $('table.order-list tbody tr:nth-child(' + (rowindex + 1) + ')').find('.edit-product').click();
                     }
@@ -827,8 +891,108 @@
         calculateGrandTotal();
     });
 
+
+    // === LOCAL STORAGE PERSISTENCE ===
+    var PUR_PREFIX = 'purchase_form_';
+
+    function savePurchaseToStorage() {
+        localStorage.setItem(PUR_PREFIX + 'tbody', $('#myTable tbody').html());
+        localStorage.setItem(PUR_PREFIX + 'product_cost', product_cost.join(','));
+        localStorage.setItem(PUR_PREFIX + 'product_discount', product_discount.join(','));
+        localStorage.setItem(PUR_PREFIX + 'tax_rate', tax_rate.join(','));
+        localStorage.setItem(PUR_PREFIX + 'tax_name', tax_name.join(','));
+        localStorage.setItem(PUR_PREFIX + 'tax_method', tax_method.join(','));
+        localStorage.setItem(PUR_PREFIX + 'unit_name', unit_name.join(',,'));
+        localStorage.setItem(PUR_PREFIX + 'unit_operator', unit_operator.join(',,'));
+        localStorage.setItem(PUR_PREFIX + 'unit_operation_value', unit_operation_value.join(',,'));
+        localStorage.setItem(PUR_PREFIX + 'is_imei', is_imei.join(','));
+
+        var vals = {};
+        var sel = $('select[name="warehouse_id"]').val();
+        if (sel) vals['warehouse_id'] = sel;
+        sel = $('select[name="supplier_id"]').val();
+        if (sel) vals['supplier_id'] = sel;
+        sel = $('select[name="status"]').val();
+        if (sel) vals['status'] = sel;
+        sel = $('select[name="currency_id"]').val();
+        if (sel) vals['currency_id'] = sel;
+        sel = $('input[name="exchange_rate"]').val();
+        if (sel) vals['exchange_rate'] = sel;
+        sel = $('select[name="order_tax_rate"]').val();
+        if (sel) vals['order_tax_rate'] = sel;
+        sel = $('input[name="order_discount"]').val();
+        if (sel) vals['order_discount'] = sel;
+        sel = $('input[name="shipping_cost"]').val();
+        if (sel) vals['shipping_cost'] = sel;
+        sel = $('textarea[name="note"]').val();
+        if (sel) vals['note'] = sel;
+        sel = $('input[name="created_at"]').val();
+        if (sel) vals['created_at'] = sel;
+        localStorage.setItem(PUR_PREFIX + 'header', JSON.stringify(vals));
+    }
+
+    function loadPurchaseFromStorage() {
+        var tbody = localStorage.getItem(PUR_PREFIX + 'tbody');
+        if (!tbody) return;
+        $('#myTable tbody').html(tbody);
+
+        if (localStorage.getItem(PUR_PREFIX + 'product_cost')) {
+            product_cost = localStorage.getItem(PUR_PREFIX + 'product_cost').split(',').map(Number);
+            product_discount = localStorage.getItem(PUR_PREFIX + 'product_discount').split(',').map(Number);
+            tax_rate = localStorage.getItem(PUR_PREFIX + 'tax_rate').split(',').map(Number);
+            tax_name = localStorage.getItem(PUR_PREFIX + 'tax_name').split(',');
+            tax_method = localStorage.getItem(PUR_PREFIX + 'tax_method').split(',').map(Number);
+            unit_name = localStorage.getItem(PUR_PREFIX + 'unit_name').split(',,');
+            unit_operator = localStorage.getItem(PUR_PREFIX + 'unit_operator').split(',,');
+            unit_operation_value = localStorage.getItem(PUR_PREFIX + 'unit_operation_value').split(',,');
+            is_imei = localStorage.getItem(PUR_PREFIX + 'is_imei').split(',').map(function(v) { return v === 'true'; });
+        }
+
+        var header = localStorage.getItem(PUR_PREFIX + 'header');
+        if (header) {
+            var h = JSON.parse(header);
+            Object.keys(h).forEach(function(key) {
+                if (key === 'note') {
+                    $('textarea[name="note"]').val(h[key]);
+                } else {
+                    $('select[name="'+key+'"], input[name="'+key+'"]').val(h[key]);
+                }
+            });
+        }
+
+        var statusVal = $('select[name="status"]').val();
+        if (statusVal == 2) {
+            $('.recieved-product-qty').removeClass('d-none');
+        }
+
+        $('.selectpicker').selectpicker('refresh');
+        calculateTotal();
+    }
+
+    function clearPurchaseStorage() {
+        Object.keys(localStorage).filter(function(k) { return k.indexOf(PUR_PREFIX) === 0; }).forEach(function(k) { localStorage.removeItem(k); });
+    }
+
+    window.addEventListener('beforeunload', function(e) {
+        if ($('#myTable tbody tr').length > 0) {
+            savePurchaseToStorage();
+            e.preventDefault(); e.returnValue = '';
+        }
+    });
+    window.addEventListener('pagehide', function() {
+        if ($('#myTable tbody tr').length > 0) savePurchaseToStorage();
+    });
+
+    $(document).ready(function() { loadPurchaseFromStorage(); });
+
+    @if(session()->has('message') && !session()->has('not_permitted'))
+        clearPurchaseStorage();
+    @endif
+    // === END LOCAL STORAGE ===
+
     $(window).keydown(function(e){
-        if (e.which == 13) {
+	    if ($('#editModal').is(':visible')) return;
+	    if (e.which == 13) {
             var $targ = $(e.target);
             if (!$targ.is("textarea") && !$targ.is(":button,:submit")) {
                 var focusNext = false;

@@ -574,6 +574,7 @@ Route::group(['middleware' => ['common', 'auth', 'active']], function() {
         Route::get('balancesheet', 'balanceSheet')->name('accounts.balancesheet');
         Route::post('account-statement', 'accountStatement')->name('accounts.statement');
         Route::get('accounts/all', 'accountsAll')->name('account.all');
+        Route::get('general-ledger', 'generalLedger')->name('general_ledger');
     });
     Route::resource('accounts', AccountsController::class);
 
