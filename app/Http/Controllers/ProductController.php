@@ -62,6 +62,74 @@ class ProductController extends Controller
     }
 
     /**
+     * Angka uang dari form bisa sampai ke server dalam format tampilan Indonesia
+     * ("8.500" atau "8.500,75") kalau JS tidak sempat menormalkannya — misalnya
+     * form ter-submit lewat tombol Enter, bukan lewat tombol Simpan. Tanpa
+     * normalisasi ini PHP membaca "8.500" sebagai 8.5, sehingga harga pokok
+     * 8.500 tersimpan menjadi 8,50.
+     */
+    public static function normalizeMoney($value)
+    {
+        if($value === null || $value === '' || is_array($value))
+            return $value;
+        if(is_int($value) || is_float($value))
+            return $value;
+
+        $clean = preg_replace('/[^\d.,\-]/', '', trim((string)$value));
+        if($clean === '' || $clean === '-')
+            return 0;
+
+        if(strpos($clean, ',') !== false) {
+            // Format Indonesia: titik = pemisah ribuan, koma = pemisah desimal.
+            $clean = str_replace(',', '.', str_replace('.', '', $clean));
+        }
+        elseif(strpos($clean, '.') !== false) {
+            $parts = explode('.', $clean);
+            $last = array_pop($parts);
+            // "8.500" / "1.234.567" -> pemisah ribuan. "8.5" / "8.50" -> desimal.
+            if(count($parts) > 1 || strlen($last) === 3)
+                $clean = implode('', $parts) . $last;
+            else
+                $clean = implode('', $parts) . '.' . $last;
+        }
+
+        return is_numeric($clean) ? (float)$clean : 0;
+    }
+
+    private function normalizeMoneyTree(array $node)
+    {
+        foreach($node as $key => $value) {
+            if(is_array($value))
+                $node[$key] = $this->normalizeMoneyTree($value);
+            elseif(in_array($key, ['cost', 'price'], true))
+                $node[$key] = self::normalizeMoney($value);
+        }
+        return $node;
+    }
+
+    /**
+     * Normalisasi semua kolom uang pada payload produk sebelum disimpan.
+     */
+    private function normalizeMoneyFields(array $data)
+    {
+        foreach(['cost', 'price', 'wholesale_price', 'promotion_price'] as $key) {
+            if(isset($data[$key]) && !is_array($data[$key]))
+                $data[$key] = self::normalizeMoney($data[$key]);
+        }
+
+        if(isset($data['unit_price']) && is_array($data['unit_price']))
+            $data['unit_price'] = array_map([self::class, 'normalizeMoney'], $data['unit_price']);
+
+        if(isset($data['additional_cost']) && is_array($data['additional_cost']))
+            $data['additional_cost'] = array_map([self::class, 'normalizeMoney'], $data['additional_cost']);
+
+        if(isset($data['pu']) && is_array($data['pu']))
+            $data['pu'] = $this->normalizeMoneyTree($data['pu']);
+
+        return $data;
+    }
+
+    /**
      * Persist the per-unit pricing table (Mode Harga: Satuan / Level Harga /
      * Jumlah) submitted as a nested `pu[<unit_id>][...]` array. No-ops when
      * price_mode is "single" (the flat products.cost/price/markup_percent/
@@ -197,7 +265,36 @@ class ProductController extends Controller
             return redirect()->back()->with('not_permitted', 'Sorry! You are not allowed to access this module');
     }
 
+    /**
+     * Entry point untuk DataTables daftar produk.
+     *
+     * Dibungkus try/catch supaya error apa pun tercatat di storage/logs/laravel.log
+     * dan tetap membalas JSON yang valid, bukan halaman error HTML. Tanpa ini
+     * DataTables cuma bisa bilang "Ajax error" tanpa petunjuk penyebabnya.
+     */
     public function productData(Request $request)
+    {
+        try {
+            return $this->buildProductData($request);
+        }
+        catch (\Throwable $e) {
+            \Log::error('productData gagal: '.$e->getMessage(), [
+                'file' => $e->getFile(),
+                'line' => $e->getLine(),
+            ]);
+
+            return response()->json([
+                'draw'            => intval($request->input('draw')),
+                'recordsTotal'    => 0,
+                'recordsFiltered' => 0,
+                'data'            => [],
+                'error'           => 'Gagal memuat daftar produk: '.$e->getMessage()
+                                     .' ('.basename($e->getFile()).':'.$e->getLine().')',
+            ]);
+        }
+    }
+
+    private function buildProductData(Request $request)
     {
         $columns = array(
             2 => 'name',
@@ -211,10 +308,47 @@ class ProductController extends Controller
             10 => 'stock_worth'
         );
 
+        // Di PHP 8 in_array() dengan argumen null melempar TypeError, jadi payload
+        // yang tidak mengirim all_permission akan membuat seluruh tabel gagal.
+        $all_permission = $request->input('all_permission');
+        $all_permission = is_array($all_permission) ? $all_permission : [];
+
         // "status" toggles between the Aktif (default) and Non-aktif product lists.
         $isActive = $request->input('status', 'active') != 'inactive';
+        $stockFilter = $request->input('stock_filter', 'all');
+        $applyStockFilter = function($query) use ($stockFilter) {
+            if($stockFilter == 'all')
+                return $query;
 
-        $totalData = DB::table('products')->where('is_active', $isActive)->count();
+            if(Auth::user()->role_id > 2) {
+                $warehouseId = Auth::user()->warehouse_id;
+                return $query->whereExists(function($subQuery) use ($stockFilter, $warehouseId) {
+                    $subQuery->select(DB::raw(1))
+                        ->from('product_warehouse')
+                        ->whereColumn('product_warehouse.product_id', 'products.id')
+                        ->where('product_warehouse.warehouse_id', $warehouseId);
+                    if($stockFilter == 'in_stock')
+                        $subQuery->where('product_warehouse.qty', '>', 0);
+                    elseif($stockFilter == 'minus')
+                        $subQuery->where('product_warehouse.qty', '<', 0);
+                    elseif($stockFilter == 'empty')
+                        $subQuery->where('product_warehouse.qty', '=', 0);
+                });
+            }
+
+            if($stockFilter == 'in_stock')
+                return $query->where('products.qty', '>', 0);
+            if($stockFilter == 'minus')
+                return $query->where('products.qty', '<', 0);
+            if($stockFilter == 'empty')
+                return $query->where('products.qty', '=', 0);
+
+            return $query;
+        };
+
+        $totalQuery = Product::where('is_active', $isActive);
+        $applyStockFilter($totalQuery);
+        $totalData = $totalQuery->count();
         $totalFiltered = $totalData;
 
         if($request->input('length') != -1)
@@ -222,8 +356,12 @@ class ProductController extends Controller
         else
             $limit = $totalData;
         $start = $request->input('start');
-        $order = 'products.'.$columns[$request->input('order.0.column')];
-        $dir = $request->input('order.0.dir');
+        // Index kolom bisa menunjuk kolom yang tidak bisa diurutkan (checkbox, gambar,
+        // custom field, tombol aksi). Tanpa fallback ini $order jadi "products." saja
+        // dan query SQL-nya error.
+        $orderIndex = $request->input('order.0.column');
+        $order = 'products.'.($columns[$orderIndex] ?? 'name');
+        $dir = strtolower($request->input('order.0.dir')) === 'desc' ? 'desc' : 'asc';
         //fetching custom fields data
         $custom_fields = CustomField::where([
                         ['belongs_to', 'product'],
@@ -234,48 +372,46 @@ class ProductController extends Controller
             $field_names[] = str_replace(" ", "_", strtolower($fieldName));
         }
         if(empty($request->input('search.value'))){
-            $products = Product::with('category', 'brand', 'unit')->offset($start)
-                        ->where('is_active', $isActive)
-                        ->limit($limit)
-                        ->orderBy($order,$dir)
-                        ->get();
+            $q = Product::with('category', 'brand', 'unit')
+                ->where('is_active', $isActive);
+            $applyStockFilter($q);
+            $totalFiltered = (clone $q)->count();
+            $products = $q->offset($start)
+                ->limit($limit)
+                ->orderBy($order,$dir)
+                ->get();
         }
-        else
-        {
+        else {
             $search = $request->input('search.value');
             $q = Product::select('products.*')
                 ->with('category', 'brand', 'unit')
                 ->join('categories', 'products.category_id', '=', 'categories.id')
                 ->leftjoin('brands', 'products.brand_id', '=', 'brands.id')
-                ->where([
-                    ['products.name', 'LIKE', "%{$search}%"],
-                    ['products.is_active', $isActive]
-                ])
-                ->orWhere([
-                    ['products.code', 'LIKE', "%{$search}%"],
-                    ['products.is_active', $isActive]
-                ])
-                ->orWhere([
-                    ['categories.name', 'LIKE', "%{$search}%"],
-                    ['categories.is_active', true],
-                    ['products.is_active', $isActive]
-                ])
-                ->orWhere([
-                    ['brands.title', 'LIKE', "%{$search}%"],
-                    ['brands.is_active', true],
-                    ['products.is_active', $isActive]
-                ]);
-            //searching with custom field
-            foreach ($field_names as $key => $field_name) {
-                $q = $q->orwhere('products.' . $field_name, 'LIKE', "%{$search}%");
-            }
+                ->where('products.is_active', $isActive)
+                ->where(function($query) use ($search, $field_names) {
+                    $query->where('products.name', 'LIKE', "%{$search}%")
+                        ->orWhere('products.code', 'LIKE', "%{$search}%")
+                        ->orWhere(function($categoryQuery) use ($search) {
+                            $categoryQuery->where('categories.name', 'LIKE', "%{$search}%")
+                                ->where('categories.is_active', true);
+                        })
+                        ->orWhere(function($brandQuery) use ($search) {
+                            $brandQuery->where('brands.title', 'LIKE', "%{$search}%")
+                                ->where('brands.is_active', true);
+                        });
+
+                    foreach ($field_names as $field_name) {
+                        $query->orwhere('products.' . $field_name, 'LIKE', "%{$search}%");
+                    }
+                });
+            $applyStockFilter($q);
+            $totalFiltered = (clone $q)->count();
 
             $q = $q->offset($start)
                 ->limit($limit)
                 ->orderBy($order,$dir);
 
             $products = $q->get();
-            $totalFiltered = $q->count();
             /*$totalFiltered = Product::
                             join('categories', 'products.category_id', '=', 'categories.id')
                             ->leftjoin('brands', 'products.brand_id', '=', 'brands.id')
@@ -322,7 +458,8 @@ class ProductController extends Controller
                     $nestedData['brand'] = $product->brand->title;
                 else
                     $nestedData['brand'] = "N/A";
-                $nestedData['category'] = $product->category->name;
+                // Kategori/brand/unit bisa sudah dihapus sementara produknya masih ada.
+                $nestedData['category'] = $product->category ? $product->category->name : 'N/A';
                 if(Auth::user()->role_id > 2 && $product->type == 'standard') {
                     $nestedData['qty'] = Product_Warehouse::where([
                                                 ['product_id', $product->id],
@@ -332,7 +469,7 @@ class ProductController extends Controller
                 else
                     $nestedData['qty'] = $product->qty;
 
-                if($product->unit_id)
+                if($product->unit_id && $product->unit)
                     $nestedData['unit'] = $product->unit->unit_name;
                 else
                     $nestedData['unit'] = 'N/A';
@@ -362,17 +499,22 @@ class ProductController extends Controller
                                 <button="type" class="btn btn-link view"><i class="fa fa-eye"></i> '.trans('file.View').'</button>
                             </li>';
 
-                if(in_array("products-edit", $request['all_permission']))
+                if(in_array("products-edit", $all_permission))
                     $nestedData['options'] .= '<li>
                             <a href="'.route('products.edit', $product->id).'" class="btn btn-link"><i class="fa fa-edit"></i> '.trans('file.edit').'</a>
                         </li>';
-                if(in_array("product_history", $request['all_permission']))
-                    $nestedData['options'] .= \Form::open(["route" => "products.history", "method" => "GET"] ).'
-                            <li>
-                                <input type="hidden" name="product_id" value="'.$product->id.'" />
-                                <button type="submit" class="btn btn-link"><i class="dripicons-checklist"></i> '.trans("file.Product History").'</button>
-                            </li>'.\Form::close();
-                if(in_array("print_barcode", $request['all_permission'])) {
+                // Route::has() dipakai supaya route cache yang basi atau routes/web.php
+                // yang belum ter-deploy cuma menyembunyikan satu menu, bukan mematikan
+                // seluruh daftar produk dengan RouteNotFoundException.
+                if(in_array("products-add", $all_permission) && \Route::has('products.duplicate'))
+                    $nestedData['options'] .= '<li>
+                            <a href="'.route('products.duplicate', $product->id).'" class="btn btn-link"><i class="fa fa-copy"></i> Duplikat Produk</a>
+                        </li>';
+                if(in_array("products-index", $all_permission) || in_array("product_history", $all_permission))
+                    $nestedData['options'] .= '<li>
+                            <a href="'.url('products/history?product_id='.$product->id).'" class="btn btn-link"><i class="dripicons-checklist"></i> '.trans("file.Product History").'</a>
+                        </li>';
+                if(in_array("print_barcode", $all_permission)) {
                     $product_info = $product->code.' ('.$product->name.')';
                     $nestedData['options'] .= \Form::open(["route" => "product.printBarcode", "method" => "GET"] ).'
                         <li>
@@ -380,7 +522,7 @@ class ProductController extends Controller
                             <button type="submit" class="btn btn-link"><i class="dripicons-print"></i> '.trans("file.print_barcode").'</button>
                         </li>'.\Form::close();
                 }
-                if(in_array("products-delete", $request['all_permission'])) {
+                if(in_array("products-delete", $all_permission)) {
                     if($isActive)
                         $nestedData['options'] .= \Form::open(["route" => ["products.destroy", $product->id], "method" => "DELETE"] ).'
                                 <li>
@@ -388,13 +530,16 @@ class ProductController extends Controller
                                 </li>'.\Form::close();
                     else
                         $nestedData['options'] .= '<li>
-                                <a href="'.route('products.activate', $product->id).'" class="btn btn-link" onclick="return confirm(\'Aktifkan kembali produk ini?\')"><i class="fa fa-check-circle"></i> Aktifkan Kembali</a>
+                                <a href="'.url('products/activate/'.$product->id).'" class="btn btn-link" onclick="return confirm(\'Aktifkan kembali produk ini?\')"><i class="fa fa-check-circle"></i> Aktifkan Kembali</a>
                             </li>';
                 }
                 $nestedData['options'] .= '</ul></div>';
                 // data for product details by one click
-                if($product->tax_id)
-                    $tax = Tax::find($product->tax_id)->name;
+                if($product->tax_id) {
+                    // Pajak bisa sudah dihapus; jangan sampai null->name bikin 500.
+                    $tax_data = Tax::find($product->tax_id);
+                    $tax = $tax_data ? $tax_data->name : 'N/A';
+                }
                 else
                     $tax = "N/A";
 
@@ -416,7 +561,10 @@ class ProductController extends Controller
             "data"            => $data
         );
 
-        echo json_encode($json_data);
+        // JSON_INVALID_UTF8_SUBSTITUTE: kalau ada satu produk saja yang punya karakter
+        // rusak (biasanya hasil copy-paste dari Excel), json_encode biasa mengembalikan
+        // false -> body kosong -> DataTables melapor "Ajax error". Diganti '?' saja.
+        return response()->json($json_data, 200, [], JSON_INVALID_UTF8_SUBSTITUTE | JSON_PARTIAL_OUTPUT_ON_ERROR);
     }
 
     public function create()
@@ -456,6 +604,7 @@ class ProductController extends Controller
             ]
         ]);
         $data = $request->except('image', 'file');
+        $data = $this->normalizeMoneyFields($data);
 
         if(isset($data['is_variant'])) {
             $data['variant_option'] = json_encode($data['variant_option']);
@@ -719,10 +868,105 @@ class ProductController extends Controller
         ]);
     }
 
+    public function duplicate($id)
+    {
+        $role = Role::firstOrCreate(['id' => Auth::user()->role_id]);
+        if(!$role->hasPermissionTo('products-add'))
+            return redirect()->back()->with('not_permitted', 'Sorry! You are not allowed to access this module');
+
+        $source = Product::with('productUnits.priceLevels', 'productUnits.priceTiers')->findOrFail($id);
+        $suffix = date('YmdHis');
+        $newProduct = null;
+
+        DB::transaction(function() use ($source, $suffix, &$newProduct) {
+            $newProduct = $source->replicate();
+            $newProduct->name = substr($source->name . ' Copy ' . $suffix, 0, 255);
+            $newProduct->code = substr($source->code . '-COPY-' . $suffix, 0, 255);
+            // Kolom 'slug' hanya ada bila addon ecommerce terpasang. Jangan diisi
+            // kalau kolomnya tidak ada, kalau tidak: SQLSTATE[42S22] Unknown column 'slug'.
+            if (\Schema::hasColumn('products', 'slug')) {
+                $newProduct->slug = $source->slug ? substr($source->slug . '-copy-' . $suffix, 0, 255) : null;
+            }
+            else {
+                unset($newProduct->slug);
+            }
+            $newProduct->qty = 0;
+            $newProduct->is_active = true;
+            if (\Schema::hasColumn('products', 'woocommerce_product_id')) {
+                $newProduct->woocommerce_product_id = null;
+                $newProduct->woocommerce_media_id = null;
+            }
+            $newProduct->save();
+
+            foreach ($source->productUnits as $sourceUnit) {
+                $newUnit = ProductUnit::create([
+                    'product_id' => $newProduct->id,
+                    'unit_id' => $sourceUnit->unit_id,
+                    'cost' => $sourceUnit->cost,
+                    'markup_percent' => $sourceUnit->markup_percent,
+                    'price' => $sourceUnit->price,
+                    'point' => $sourceUnit->point,
+                    'commission' => $sourceUnit->commission,
+                    'sort_order' => $sourceUnit->sort_order,
+                ]);
+
+                foreach ($sourceUnit->priceLevels as $level) {
+                    ProductUnitPriceLevel::create([
+                        'product_unit_id' => $newUnit->id,
+                        'customer_group_id' => $level->customer_group_id,
+                        'markup_percent' => $level->markup_percent,
+                        'price' => $level->price,
+                    ]);
+                }
+
+                foreach ($sourceUnit->priceTiers as $tier) {
+                    ProductUnitPriceTier::create([
+                        'product_unit_id' => $newUnit->id,
+                        'tier_no' => $tier->tier_no,
+                        'min_qty' => $tier->min_qty,
+                        'markup_percent' => $tier->markup_percent,
+                        'price' => $tier->price,
+                    ]);
+                }
+            }
+
+            ProductVariant::where('product_id', $source->id)->orderBy('position')->get()->each(function($variant) use ($newProduct, $suffix) {
+                ProductVariant::create([
+                    'product_id' => $newProduct->id,
+                    'variant_id' => $variant->variant_id,
+                    'position' => $variant->position,
+                    'item_code' => substr($variant->item_code . '-COPY-' . $suffix, 0, 255),
+                    'additional_cost' => $variant->additional_cost,
+                    'additional_price' => $variant->additional_price,
+                    'qty' => 0,
+                ]);
+            });
+
+            Product_Warehouse::where('product_id', $source->id)->get()->each(function($warehouseRow) use ($newProduct) {
+                Product_Warehouse::create([
+                    'product_id' => $newProduct->id,
+                    'product_batch_id' => null,
+                    'variant_id' => $warehouseRow->variant_id,
+                    'imei_number' => null,
+                    'warehouse_id' => $warehouseRow->warehouse_id,
+                    'rack_id' => null,
+                    'qty' => 0,
+                    'price' => $warehouseRow->price,
+                ]);
+            });
+
+        });
+
+        $this->cacheForget('product_list');
+        $this->cacheForget('product_list_with_variant');
+
+        return redirect()->route('products.edit', $newProduct->id)->with('edit_message', 'Produk berhasil diduplikat. Silakan ubah nama dan barcode.');
+    }
+
     public function history(Request $request)
     {
         $role = Role::find(Auth::user()->role_id);
-        if($role->hasPermissionTo('product_history')) {
+        if($role->hasPermissionTo('product_history') || $role->hasPermissionTo('products-index')) {
             if($request->input('warehouse_id'))
                 $warehouse_id = $request->input('warehouse_id');
             else
@@ -740,6 +984,8 @@ class ProductController extends Controller
             }
             $product_id = $request->input('product_id');
             $product_data = Product::select('name', 'code')->find($product_id);
+            if(!$product_data)
+                return redirect('products')->with('not_permitted', 'Produk tidak ditemukan');
             $lims_warehouse_list = Warehouse::where('is_active', true)->get();
             return view('backend.product.history',compact('starting_date', 'ending_date', 'warehouse_id', 'warehouse_type', 'product_id', 'product_data', 'lims_warehouse_list'));
         }
@@ -1186,6 +1432,215 @@ class ProductController extends Controller
         echo json_encode($json_data);
     }
 
+    public function transferHistoryData(Request $request)
+    {
+        $columns = array(
+            1 => 'created_at',
+            2 => 'reference_no',
+        );
+
+        $product_id = $request->input('product_id');
+        $warehouse_id = $request->input('warehouse_id');
+
+        $q = DB::table('transfers')
+            ->join('product_transfer', 'transfers.id', '=', 'product_transfer.transfer_id')
+            ->where('product_transfer.product_id', $product_id)
+            ->whereDate('transfers.created_at', '>=', $request->input('starting_date'))
+            ->whereDate('transfers.created_at', '<=', $request->input('ending_date'));
+        if($warehouse_id)
+            $q = $q->where(function($query) use ($warehouse_id) {
+                $query->where('transfers.from_warehouse_id', $warehouse_id)
+                    ->orWhere('transfers.to_warehouse_id', $warehouse_id);
+            });
+
+        $totalData = (clone $q)->count();
+        $totalFiltered = $totalData;
+
+        if($request->input('length') != -1)
+            $limit = $request->input('length');
+        else
+            $limit = $totalData;
+        $start = $request->input('start');
+        $order = 'transfers.'.$columns[$request->input('order.0.column')];
+        $dir = $request->input('order.0.dir');
+        $q = $q->join('warehouses as from_warehouses', 'transfers.from_warehouse_id', '=', 'from_warehouses.id')
+                ->join('warehouses as to_warehouses', 'transfers.to_warehouse_id', '=', 'to_warehouses.id')
+                ->select('transfers.id', 'transfers.reference_no', 'transfers.created_at', 'from_warehouses.name as from_warehouse_name', 'to_warehouses.name as to_warehouse_name', 'product_transfer.qty', 'product_transfer.net_unit_cost', 'product_transfer.total')
+                ->offset($start)
+                ->limit($limit)
+                ->orderBy($order, $dir);
+        if(empty($request->input('search.value'))) {
+            $transfers = $q->get();
+        }
+        else {
+            $search = $request->input('search.value');
+            $transfers = $q->where('transfers.reference_no', 'LIKE', "%{$search}%")->get();
+            $totalFiltered = count($transfers);
+        }
+        $data = array();
+        if(!empty($transfers))
+        {
+            foreach ($transfers as $key => $transfer)
+            {
+                $nestedData['id'] = $transfer->id;
+                $nestedData['key'] = $key;
+                $nestedData['date'] = date(config('date_format'), strtotime($transfer->created_at));
+                $nestedData['reference_no'] = $transfer->reference_no;
+                $nestedData['warehouse'] = $transfer->from_warehouse_name.' &rarr; '.$transfer->to_warehouse_name;
+                $nestedData['qty'] = number_format($transfer->qty, config('decimal'), ',', '.');
+                $nestedData['unit_cost'] = number_format($transfer->net_unit_cost, config('decimal'), ',', '.');
+                $nestedData['sub_total'] = number_format($transfer->total, config('decimal'), ',', '.');
+                $data[] = $nestedData;
+            }
+        }
+        $json_data = array(
+            "draw"            => intval($request->input('draw')),
+            "recordsTotal"    => intval($totalData),
+            "recordsFiltered" => intval($totalFiltered),
+            "data"            => $data
+        );
+        echo json_encode($json_data);
+    }
+
+    // Menggabungkan semua jenis transaksi (jual, beli, retur jual, retur beli,
+    // penyesuaian, transfer) untuk satu produk ke dalam satu daftar tunggal,
+    // diurutkan berdasarkan tanggal - untuk tab "Semua Transaksi" di Riwayat
+    // Produk. Karena datanya berasal dari 6 tabel yang berbeda strukturnya,
+    // paginasi/pencarian dilakukan di PHP (bukan didorong ke SQL) setelah semua
+    // baris pada rentang tanggal dan produk terkait dikumpulkan.
+    public function allHistoryData(Request $request)
+    {
+        $product_id = $request->input('product_id');
+        $warehouse_id = $request->input('warehouse_id');
+        $starting_date = $request->input('starting_date');
+        $ending_date = $request->input('ending_date');
+
+        $rows = collect();
+
+        $sales = DB::table('sales')
+            ->join('product_sales', 'sales.id', '=', 'product_sales.sale_id')
+            ->join('warehouses', 'sales.warehouse_id', '=', 'warehouses.id')
+            ->where('product_sales.product_id', $product_id)
+            ->whereDate('sales.created_at', '>=', $starting_date)
+            ->whereDate('sales.created_at', '<=', $ending_date)
+            ->when($warehouse_id, fn($q) => $q->where('sales.warehouse_id', $warehouse_id))
+            ->select('sales.reference_no', 'sales.created_at', 'warehouses.name as warehouse', 'product_sales.qty', 'product_sales.total')
+            ->get();
+        foreach ($sales as $row) {
+            $rows->push(['type' => 'Penjualan', 'reference_no' => $row->reference_no, 'created_at' => $row->created_at, 'warehouse' => $row->warehouse, 'qty' => $row->qty, 'sub_total' => $row->total]);
+        }
+
+        $purchases = DB::table('purchases')
+            ->join('product_purchases', 'purchases.id', '=', 'product_purchases.purchase_id')
+            ->join('warehouses', 'purchases.warehouse_id', '=', 'warehouses.id')
+            ->where('product_purchases.product_id', $product_id)
+            ->whereDate('purchases.created_at', '>=', $starting_date)
+            ->whereDate('purchases.created_at', '<=', $ending_date)
+            ->when($warehouse_id, fn($q) => $q->where('purchases.warehouse_id', $warehouse_id))
+            ->select('purchases.reference_no', 'purchases.created_at', 'warehouses.name as warehouse', 'product_purchases.qty', 'product_purchases.total')
+            ->get();
+        foreach ($purchases as $row) {
+            $rows->push(['type' => 'Pembelian', 'reference_no' => $row->reference_no, 'created_at' => $row->created_at, 'warehouse' => $row->warehouse, 'qty' => $row->qty, 'sub_total' => $row->total]);
+        }
+
+        $sale_returns = DB::table('returns')
+            ->join('product_returns', 'returns.id', '=', 'product_returns.return_id')
+            ->join('warehouses', 'returns.warehouse_id', '=', 'warehouses.id')
+            ->where('product_returns.product_id', $product_id)
+            ->whereDate('returns.created_at', '>=', $starting_date)
+            ->whereDate('returns.created_at', '<=', $ending_date)
+            ->when($warehouse_id, fn($q) => $q->where('returns.warehouse_id', $warehouse_id))
+            ->select('returns.reference_no', 'returns.created_at', 'warehouses.name as warehouse', 'product_returns.qty', 'product_returns.total')
+            ->get();
+        foreach ($sale_returns as $row) {
+            $rows->push(['type' => 'Retur Penjualan', 'reference_no' => $row->reference_no, 'created_at' => $row->created_at, 'warehouse' => $row->warehouse, 'qty' => $row->qty, 'sub_total' => $row->total]);
+        }
+
+        $purchase_returns = DB::table('return_purchases')
+            ->join('purchase_product_return', 'return_purchases.id', '=', 'purchase_product_return.return_id')
+            ->join('warehouses', 'return_purchases.warehouse_id', '=', 'warehouses.id')
+            ->where('purchase_product_return.product_id', $product_id)
+            ->whereDate('return_purchases.created_at', '>=', $starting_date)
+            ->whereDate('return_purchases.created_at', '<=', $ending_date)
+            ->when($warehouse_id, fn($q) => $q->where('return_purchases.warehouse_id', $warehouse_id))
+            ->select('return_purchases.reference_no', 'return_purchases.created_at', 'warehouses.name as warehouse', 'purchase_product_return.qty', 'purchase_product_return.total')
+            ->get();
+        foreach ($purchase_returns as $row) {
+            $rows->push(['type' => 'Retur Pembelian', 'reference_no' => $row->reference_no, 'created_at' => $row->created_at, 'warehouse' => $row->warehouse, 'qty' => $row->qty, 'sub_total' => $row->total]);
+        }
+
+        $adjustments = DB::table('adjustments')
+            ->join('product_adjustments', 'adjustments.id', '=', 'product_adjustments.adjustment_id')
+            ->join('warehouses', 'adjustments.warehouse_id', '=', 'warehouses.id')
+            ->where('product_adjustments.product_id', $product_id)
+            ->whereDate('adjustments.created_at', '>=', $starting_date)
+            ->whereDate('adjustments.created_at', '<=', $ending_date)
+            ->when($warehouse_id, fn($q) => $q->where('adjustments.warehouse_id', $warehouse_id))
+            ->select('adjustments.reference_no', 'adjustments.created_at', 'warehouses.name as warehouse', 'product_adjustments.qty', 'product_adjustments.action', 'product_adjustments.unit_cost')
+            ->get();
+        foreach ($adjustments as $row) {
+            $label = $row->action == '-' ? 'Penyesuaian (Berkurang)' : 'Penyesuaian (Bertambah)';
+            $rows->push(['type' => $label, 'reference_no' => $row->reference_no, 'created_at' => $row->created_at, 'warehouse' => $row->warehouse, 'qty' => $row->qty, 'sub_total' => $row->qty * $row->unit_cost]);
+        }
+
+        $transfers = DB::table('transfers')
+            ->join('product_transfer', 'transfers.id', '=', 'product_transfer.transfer_id')
+            ->join('warehouses as from_warehouses', 'transfers.from_warehouse_id', '=', 'from_warehouses.id')
+            ->join('warehouses as to_warehouses', 'transfers.to_warehouse_id', '=', 'to_warehouses.id')
+            ->where('product_transfer.product_id', $product_id)
+            ->whereDate('transfers.created_at', '>=', $starting_date)
+            ->whereDate('transfers.created_at', '<=', $ending_date)
+            ->when($warehouse_id, function($q) use ($warehouse_id) {
+                $q->where(function($query) use ($warehouse_id) {
+                    $query->where('transfers.from_warehouse_id', $warehouse_id)
+                        ->orWhere('transfers.to_warehouse_id', $warehouse_id);
+                });
+            })
+            ->select('transfers.reference_no', 'transfers.created_at', 'from_warehouses.name as from_warehouse', 'to_warehouses.name as to_warehouse', 'product_transfer.qty', 'product_transfer.total')
+            ->get();
+        foreach ($transfers as $row) {
+            $rows->push(['type' => 'Transfer', 'reference_no' => $row->reference_no, 'created_at' => $row->created_at, 'warehouse' => $row->from_warehouse.' &rarr; '.$row->to_warehouse, 'qty' => $row->qty, 'sub_total' => $row->total]);
+        }
+
+        $rows = $rows->sortByDesc('created_at')->values();
+
+        $totalData = $rows->count();
+        $search = $request->input('search.value');
+        if(!empty($search)) {
+            $rows = $rows->filter(function($row) use ($search) {
+                return stripos($row['reference_no'], $search) !== false || stripos($row['type'], $search) !== false;
+            })->values();
+        }
+        $totalFiltered = $rows->count();
+
+        $start = (int)$request->input('start');
+        $length = (int)$request->input('length');
+        if($length == -1)
+            $length = $totalFiltered;
+        $paged = $rows->slice($start, $length)->values();
+
+        $data = array();
+        foreach ($paged as $key => $row) {
+            $data[] = [
+                'key' => $key,
+                'type' => $row['type'],
+                'date' => date(config('date_format'), strtotime($row['created_at'])),
+                'reference_no' => $row['reference_no'],
+                'warehouse' => $row['warehouse'],
+                'qty' => number_format($row['qty'], config('decimal'), ',', '.'),
+                'sub_total' => number_format($row['sub_total'], config('decimal'), ',', '.'),
+            ];
+        }
+
+        $json_data = array(
+            "draw"            => intval($request->input('draw')),
+            "recordsTotal"    => intval($totalData),
+            "recordsFiltered" => intval($totalFiltered),
+            "data"            => $data
+        );
+        echo json_encode($json_data);
+    }
+
     public function variantData($id)
     {
         if(Auth::user()->role_id > 2) {
@@ -1268,6 +1723,7 @@ class ProductController extends Controller
 
             $lims_product_data = Product::findOrFail($request->input('id'));
             $data = $request->except('image', 'file', 'prev_img');
+            $data = $this->normalizeMoneyFields($data);
             $data['name'] = htmlspecialchars(trim($data['name']), ENT_QUOTES);
 
 

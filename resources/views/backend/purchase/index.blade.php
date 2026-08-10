@@ -387,6 +387,9 @@
         return false;
     }
 
+    // parseLocalizedNumber() kini didefinisikan sekali di layout/main.blade.php
+    // supaya semua halaman memakai parser yang sama.
+
     $(document).on("click", "tr.purchase-link td:not(:first-child, :last-child)", function(){
         var purchase = $(this).parent().data('purchase');
         purchaseDetails(purchase);
@@ -416,7 +419,7 @@
         rowindex = $(this).closest('tr').index();
         var purchase_id = $(this).data('id').toString();
         var balance = $('table.purchase-list tbody tr:nth-child(' + (rowindex + 1) + ')').find('td:nth-child(9)').text();
-        balance = parseFloat(balance.replace(/,/g, ''));
+        balance = parseLocalizedNumber(balance);
         $('input[name="amount"]').val(balance);
         $('input[name="balance"]').val(balance);
         $('input[name="paying_amount"]').val(balance);
@@ -522,19 +525,19 @@
     });
 
     $('input[name="paying_amount"]').on("input", function() {
-        $(".change").text(parseFloat( $(this).val() - $('input[name="amount"]').val() ).toFixed({{$general_setting->decimal}}));
+        $(".change").text(parseFloat(parseLocalizedNumber($(this).val()) - parseLocalizedNumber($('input[name="amount"]').val())).toFixed({{$general_setting->decimal}}));
     });
 
     $('input[name="amount"]').on("input", function() {
-        if( $(this).val() > parseFloat($('input[name="paying_amount"]').val()) ) {
+        if(parseLocalizedNumber($(this).val()) > parseLocalizedNumber($('input[name="paying_amount"]').val()) ) {
             alert('Paying amount cannot be bigger than recieved amount');
             $(this).val('');
         }
-        else if( $(this).val() > parseFloat($('input[name="balance"]').val()) ) {
+        else if(parseLocalizedNumber($(this).val()) > parseLocalizedNumber($('input[name="balance"]').val()) ) {
             alert('Paying amount cannot be bigger than due amount');
             $(this).val('');
         }
-        $(".change").text(parseFloat($('input[name="paying_amount"]').val() - $(this).val()).toFixed({{$general_setting->decimal}}));
+        $(".change").text(parseFloat(parseLocalizedNumber($('input[name="paying_amount"]').val()) - parseLocalizedNumber($(this).val())).toFixed({{$general_setting->decimal}}));
     });
 
     $('select[name="edit_paid_by_id"]').on("change", function() {
@@ -557,15 +560,15 @@
     });
 
     $('input[name="edit_amount"]').on("input", function() {
-        if( $(this).val() > parseFloat($('input[name="edit_paying_amount"]').val()) ) {
+        if(parseLocalizedNumber($(this).val()) > parseLocalizedNumber($('input[name="edit_paying_amount"]').val()) ) {
             alert('Paying amount cannot be bigger than recieved amount');
             $(this).val('');
         }
-        $(".change").text(parseFloat($('input[name="edit_paying_amount"]').val() - $(this).val()).toFixed({{$general_setting->decimal}}));
+        $(".change").text(parseFloat(parseLocalizedNumber($('input[name="edit_paying_amount"]').val()) - parseLocalizedNumber($(this).val())).toFixed({{$general_setting->decimal}}));
     });
 
     $('input[name="edit_paying_amount"]').on("input", function() {
-        $(".change").text(parseFloat( $(this).val() - $('input[name="edit_amount"]').val() ).toFixed({{$general_setting->decimal}}));
+        $(".change").text(parseFloat(parseLocalizedNumber($(this).val()) - parseLocalizedNumber($('input[name="edit_amount"]').val())).toFixed({{$general_setting->decimal}}));
     });
 
     $('#purchase-table').DataTable( {
@@ -729,21 +732,38 @@
         }
     });
 
-    function datatable_sum(dt_selector, is_calling_first) {
-        if (dt_selector.rows( '.selected' ).any() && is_calling_first) {
-            var rows = dt_selector.rows( '.selected' ).indexes();
+    /*
+     * Total footer.
+     *
+     * Jangan memakai .sum().toFixed() secara langsung: sum() bawaan plug-in
+     * membaca "260,00" sebagai 26000 (koma ribuan dibuang) kalau file
+     * vendor/datatable/sum().js yang lama masih ter-cache di browser, dan
+     * toFixed() menghasilkan "26000.00" - format titik-desimal yang juga
+     * tidak sama dengan format baris di atasnya.
+     *
+     * parseLocalizedNumber() + formatLocalizedNumber() (didefinisikan inline
+     * di layout, jadi tidak pernah ter-cache) menghitung dan menampilkan
+     * angkanya dengan format Indonesia yang sama persis dengan barisnya.
+     */
+    function limsColumnTotal(data_api) {
+        var total = 0;
+        data_api.each(function(value) {
+            total += window.parseLocalizedNumber(value);
+        });
+        return window.formatLocalizedNumber(total, {{$general_setting->decimal}});
+    }
 
-            $( dt_selector.column( 5 ).footer() ).html(dt_selector.cells( rows, 5, { page: 'current' } ).data().sum().toFixed({{$general_setting->decimal}}));
-            $( dt_selector.column( 6 ).footer() ).html(dt_selector.cells( rows, 6, { page: 'current' } ).data().sum().toFixed({{$general_setting->decimal}}));
-            $( dt_selector.column( 7 ).footer() ).html(dt_selector.cells( rows, 7, { page: 'current' } ).data().sum().toFixed({{$general_setting->decimal}}));
-            $( dt_selector.column( 8 ).footer() ).html(dt_selector.cells( rows, 8, { page: 'current' } ).data().sum().toFixed({{$general_setting->decimal}}));
-        }
-        else {
-            $( dt_selector.column( 5 ).footer() ).html(dt_selector.column( 5, {page:'current'} ).data().sum().toFixed({{$general_setting->decimal}}));
-            $( dt_selector.column( 6 ).footer() ).html(dt_selector.column( 6, {page:'current'} ).data().sum().toFixed({{$general_setting->decimal}}));
-            $( dt_selector.column( 7 ).footer() ).html(dt_selector.column( 7, {page:'current'} ).data().sum().toFixed({{$general_setting->decimal}}));
-            $( dt_selector.column( 8 ).footer() ).html(dt_selector.column( 8, {page:'current'} ).data().sum().toFixed({{$general_setting->decimal}}));
-        }
+    function datatable_sum(dt_selector, is_calling_first) {
+        var money_columns = [5, 6, 7, 8];
+        var use_selection = dt_selector.rows( '.selected' ).any() && is_calling_first;
+        var rows = use_selection ? dt_selector.rows( '.selected' ).indexes() : null;
+
+        money_columns.forEach(function(col) {
+            var data_api = use_selection
+                ? dt_selector.cells( rows, col, { page: 'current' } ).data()
+                : dt_selector.column( col, { page: 'current' } ).data();
+            $( dt_selector.column( col ).footer() ).html( limsColumnTotal(data_api) );
+        });
     }
 
     function purchaseDetails(purchase){
@@ -849,16 +869,16 @@
     }
 
     $(document).on('submit', '.payment-form', function(e) {
-        if( $('input[name="paying_amount"]').val() < parseFloat($('#amount').val()) ) {
+        if(parseLocalizedNumber($('input[name="paying_amount"]').val()) < parseLocalizedNumber($('#amount').val()) ) {
             alert('Paying amount cannot be bigger than recieved amount');
             $('input[name="amount"]').val('');
-            $(".change").text(parseFloat( $('input[name="paying_amount"]').val() - $('#amount').val() ).toFixed({{$general_setting->decimal}}));
+            $(".change").text(parseFloat(parseLocalizedNumber($('input[name="paying_amount"]').val()) - parseLocalizedNumber($('#amount').val())).toFixed({{$general_setting->decimal}}));
             e.preventDefault();
         }
-        else if( $('input[name="edit_paying_amount"]').val() < parseFloat($('input[name="edit_amount"]').val()) ) {
+        else if(parseLocalizedNumber($('input[name="edit_paying_amount"]').val()) < parseLocalizedNumber($('input[name="edit_amount"]').val()) ) {
             alert('Paying amount cannot be bigger than recieved amount');
             $('input[name="edit_amount"]').val('');
-            $(".change").text(parseFloat( $('input[name="edit_paying_amount"]').val() - $('input[name="edit_amount"]').val() ).toFixed({{$general_setting->decimal}}));
+            $(".change").text(parseFloat(parseLocalizedNumber($('input[name="edit_paying_amount"]').val()) - parseLocalizedNumber($('input[name="edit_amount"]').val())).toFixed({{$general_setting->decimal}}));
             e.preventDefault();
         }
 

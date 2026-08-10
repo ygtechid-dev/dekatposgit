@@ -37,9 +37,11 @@
                                 <div class="row mt-3">
                                     <div class="col-md-12">
                                         <label>{{trans('file.Select Product')}}</label>
-                                        <div class="search-box input-group">
+                                        <div class="search-box input-group position-relative">
                                             <button type="button" class="btn btn-secondary btn-lg"><i class="fa fa-barcode"></i></button>
-                                            <input type="text" name="product_code_name" id="lims_productcodeSearch" placeholder="Please type product code and select..." class="form-control" />
+                                            <input type="text" name="product_code_name" id="lims_productcodeSearch" list="adjustment-product-datalist" placeholder="Please type product code and select..." class="form-control" />
+                                            <datalist id="adjustment-product-datalist"></datalist>
+                                            <div id="adjustment-product-suggestions" class="list-group position-absolute w-100" style="top:100%; left:0; z-index:99999; display:none;"></div>
                                         </div>
                                     </div>
                                 </div>
@@ -115,16 +117,46 @@
     var product_rack_name = [];
     var lims_rack_array = [];
     var rackBaseUrl = "{{url('racks/warehouse')}}";
+    var adjustmentDraftKey = 'dekatpos:draft:' + location.pathname;
 
 	$('.selectpicker').selectpicker({
 	    style: 'btn-link',
 	});
 
+	var lims_productcodeSearch = $('#lims_productcodeSearch');
+    var $adjustmentSuggestions = $('#adjustment-product-suggestions');
+    var $adjustmentDataList = $('#adjustment-product-datalist');
+    var currentAdjustmentSuggestions = [];
+    var adjustmentSuggestionUrl = "{{url('qty_adjustment/product_suggestions')}}";
 
+
+    var activeWarehouseRequest = 0;
 
 	$('select[name="warehouse_id"]').on('change', function() {
 	    var id = $(this).val();
+        lims_product_array = [];
+        product_code = [];
+        product_name = [];
+        product_qty = [];
+        unit_cost = [];
+        product_rack_id = [];
+        product_rack_name = [];
+        currentAdjustmentSuggestions = [];
+        $('#adjustment-product-datalist').empty();
+        $('#adjustment-product-suggestions').hide().empty();
+        lims_productcodeSearch.val('');
+
+        // Baris yang sudah terlanjur ditambahkan memakai stok sistem gudang/toko
+        // sebelumnya - kalau gudang diganti, baris itu harus dibuang supaya
+        // stok awal toko lain tidak ikut terbawa.
+        if ($("table.order-list tbody tr").length) {
+            $("table.order-list tbody").empty();
+            calculateTotal();
+        }
+
+        var requestToken = ++activeWarehouseRequest;
 	    $.get("{{url('qty_adjustment/getproduct')}}/" + id, function(data) {
+	        if (requestToken !== activeWarehouseRequest) return; // respon basi
 	        lims_product_array = [];
 	        product_code = data[0];
 	        product_name = data[1];
@@ -145,6 +177,7 @@
 	        lims_rack_array = [];
 	        lims_productcodeSearch.prop('disabled', true).attr('placeholder', 'Memuat daftar rak...');
 	        $.get(rackBaseUrl + '/' + id, function(data) {
+	            if (requestToken !== activeWarehouseRequest) return; // respon basi
 	            lims_rack_array = data;
 	        }).always(function() {
 	            lims_productcodeSearch.prop('disabled', false).attr('placeholder', 'Please type product code and select...');
@@ -155,14 +188,90 @@
 	    }
 	});
 
-	var lims_productcodeSearch = $('#lims_productcodeSearch');
+    function localAdjustmentSuggestions(term) {
+        var matcher = new RegExp($.ui.autocomplete.escapeRegex(term), "i");
+        return $.grep(lims_product_array, function(item) {
+            return matcher.test(item);
+        }).slice(0, 20);
+    }
+
+    function renderAdjustmentSuggestions(items) {
+        currentAdjustmentSuggestions = items || [];
+        $adjustmentDataList.empty();
+        $.each(currentAdjustmentSuggestions, function(i, item) {
+            $adjustmentDataList.append('<option value="' + $('<div/>').text(item).html() + '">' + item.replace('|', ' - ') + '</option>');
+        });
+        if (!items || !items.length) {
+            $adjustmentSuggestions.hide().empty();
+            return;
+        }
+
+        var html = '';
+        $.each(items, function(i, item) {
+            html += '<button type="button" class="list-group-item list-group-item-action adjustment-suggestion-item" data-value="' + $('<div/>').text(item).html() + '">' + item.replace('|', ' - ') + '</button>';
+        });
+        $adjustmentSuggestions.html(html).show();
+    }
+
+    lims_productcodeSearch.on('input', function() {
+        var term = $(this).val();
+        if (term.length < 1) {
+            $adjustmentSuggestions.hide().empty();
+            return;
+        }
+        $.get(adjustmentSuggestionUrl, {
+            term: term,
+            warehouse_id: $('select[name="warehouse_id"]').val()
+        }, function(items) {
+            renderAdjustmentSuggestions(items && items.length ? items : localAdjustmentSuggestions(term));
+        }).fail(function() {
+            renderAdjustmentSuggestions(localAdjustmentSuggestions(term));
+        });
+    });
+
+    lims_productcodeSearch.on('change', function() {
+        var selected = $(this).val();
+        if (currentAdjustmentSuggestions.indexOf(selected) !== -1) {
+            $(this).val('');
+            $adjustmentSuggestions.hide().empty();
+            productSearch(selected);
+        }
+    });
+
+    lims_productcodeSearch.on('keydown', function(e) {
+        if (e.key === 'Enter' && currentAdjustmentSuggestions.length) {
+            e.preventDefault();
+            var selected = currentAdjustmentSuggestions[0];
+            $(this).val('');
+            $adjustmentSuggestions.hide().empty();
+            productSearch(selected);
+        }
+    });
+
+    $adjustmentSuggestions.on('mousedown', '.adjustment-suggestion-item', function(e) {
+        e.preventDefault();
+        var data = $(this).data('value');
+        lims_productcodeSearch.val('');
+        $adjustmentSuggestions.hide().empty();
+        productSearch(data);
+    });
+
+    $(document).on('click', function(e) {
+        if (!$(e.target).closest('.search-box').length) {
+            $adjustmentSuggestions.hide();
+        }
+    });
 
 	lims_productcodeSearch.autocomplete({
 	    source: function(request, response) {
-	        var matcher = new RegExp(".?" + $.ui.autocomplete.escapeRegex(request.term), "i");
-	        response($.grep(lims_product_array, function(item) {
-	            return matcher.test(item);
-	        }));
+            $.get(adjustmentSuggestionUrl, {
+                term: request.term,
+                warehouse_id: $('select[name="warehouse_id"]').val()
+            }, function(items) {
+                response(items && items.length ? items : localAdjustmentSuggestions(request.term));
+            }).fail(function() {
+                response(localAdjustmentSuggestions(request.term));
+            });
 	    },
 	    response: function(event, ui) {
 	        if (ui.content.length == 1) {
@@ -177,10 +286,55 @@
 	    }
 	});
 
+    if ($('select[name="warehouse_id"]').val()) {
+        $('select[name="warehouse_id"]').trigger('change');
+    }
+
+    function saveAdjustmentDraft() {
+        try {
+            localStorage.setItem(adjustmentDraftKey, JSON.stringify({
+                warehouse_id: $('select[name="warehouse_id"]').val(),
+                note: $('textarea[name="note"]').val(),
+                tbody: $('table.order-list tbody').html(),
+                total_qty: $('input[name="total_qty"]').val(),
+                item: $('input[name="item"]').val()
+            }));
+        } catch (e) {}
+    }
+
+    function restoreAdjustmentDraft() {
+        try {
+            var raw = localStorage.getItem(adjustmentDraftKey);
+            if (!raw) return;
+            var draft = JSON.parse(raw);
+            if (draft.warehouse_id) {
+                $('select[name="warehouse_id"]').val(draft.warehouse_id).selectpicker('refresh');
+            }
+            if (draft.note) $('textarea[name="note"]').val(draft.note);
+            if (draft.tbody) $('table.order-list tbody').html(draft.tbody);
+            calculateTotal();
+        } catch (e) {}
+    }
+
+    setTimeout(restoreAdjustmentDraft, 350);
+    $('#adjustment-form').on('input change', 'input, select, textarea', saveAdjustmentDraft);
+    $('table.order-list tbody').on('input change', 'input, select', saveAdjustmentDraft);
+
 	$("#myTable").on('input', '.stock-fisik', function() {
 	    updateRowDifference($(this).closest('tr'));
 	    calculateTotal();
+        saveAdjustmentDraft();
 	});
+
+    $("#myTable").on('keydown', '.stock-fisik', function(e) {
+        if (e.key === 'Enter') {
+            e.preventDefault();
+            updateRowDifference($(this).closest('tr'));
+            calculateTotal();
+            saveAdjustmentDraft();
+            lims_productcodeSearch.focus().select();
+        }
+    });
 
 	$("table.order-list tbody").on("click", ".ibtnDel", function(event) {
 	    rowindex = $(this).closest('tr').index();
@@ -214,6 +368,7 @@
 	        e.preventDefault();
 	        return;
 	    }
+        localStorage.removeItem(adjustmentDraftKey);
 	});
 
     function rackSelectHtml(selectedRackId) {
@@ -228,14 +383,24 @@
     }
 
 	function productSearch(data){
+	    var requestWarehouseId = $('select[name="warehouse_id"]').val();
+	    if (!requestWarehouseId) {
+	        alert('Pilih gudang/toko dulu.');
+	        return;
+	    }
 		$.ajax({
             type: 'GET',
             url: "{{route('product_adjustment.search')}}",
             data: {
-                data: data
+                data: data,
+                warehouse_id: requestWarehouseId
             },
             success: function(data) {
-            	console.log(data);
+                // Abaikan respon yang datang setelah gudang/toko diganti,
+                // supaya stok toko lama tidak ikut terbawa.
+                if (String($('select[name="warehouse_id"]').val()) !== String(requestWarehouseId)) {
+                    return;
+                }
                 var flag = 1;
                 $(".product-code").each(function(i) {
                     if ($(this).val() == data[1]) {
@@ -249,18 +414,25 @@
                 $("input[name='product_code_name']").val('');
                 if(flag){
                     var pos = product_code.indexOf(data[1]);
-                    var system_qty = (pos > -1) ? product_qty[pos] : 0;
+                    // Stok sistem SELALU dari server untuk gudang/toko yang
+                    // dipilih (data[5]); array product_qty hanya cadangan.
+                    var system_qty = (typeof data[5] !== 'undefined' && data[5] !== null)
+                        ? parseFloat(data[5])
+                        : ((pos > -1) ? parseFloat(product_qty[pos]) : 0);
+                    if (isNaN(system_qty)) system_qty = 0;
+
                     // Rak ikut otomatis dari plan yang sudah ada (Plan Toko/Plan
                     // Gudang) - sama seperti gudang, bukan dipilih bebas di sini.
+                    var rackId = data[6] ? data[6] : ((pos > -1 && product_rack_id[pos]) ? product_rack_id[pos] : '');
+                    var rackName = data[7] ? data[7] : ((pos > -1 && product_rack_name[pos]) ? product_rack_name[pos] : '-');
+
                     // Barang yang belum di-plan ke rak sudah difilter di server
                     // (lihat AdjustmentController::getProduct), jadi kalau gudang
-                    // ini pakai rak tapi barangnya tidak ketemu di pool, tolak.
-                    if (lims_rack_array.length && (pos === -1 || !product_rack_id[pos])) {
-                        alert('Barang ini belum di-plan ke rak manapun. Plan dulu lewat menu Plan Toko/Plan Gudang sebelum bisa disesuaikan.');
+                    // ini pakai rak tapi barangnya belum punya rak di gudang ini, tolak.
+                    if (lims_rack_array.length && !rackId) {
+                        alert('Barang ini belum di-plan ke rak manapun di gudang/toko ini. Plan dulu lewat menu Plan Toko/Plan Gudang sebelum bisa disesuaikan.');
                         return;
                     }
-                    var rackId = (pos > -1 && product_rack_id[pos]) ? product_rack_id[pos] : '';
-                    var rackName = (pos > -1 && product_rack_name[pos]) ? product_rack_name[pos] : '-';
 
                     var newRow = $("<tr>");
                     var cols = '';
@@ -281,6 +453,8 @@
                     newRow.append(cols);
                     $("table.order-list tbody").append(newRow);
                     calculateTotal();
+                    saveAdjustmentDraft();
+                    newRow.find('.stock-fisik').focus().select();
                 }
             }
         });
@@ -299,7 +473,7 @@
 	function calculateTotal() {
 	    var total_qty = 0;
 	    $(".difference-cell").each(function() {
-	        var val = parseFloat($(this).text());
+	        var val = parseLocalizedNumber($(this).text());
 	        if (!isNaN(val)) total_qty += val;
 	    });
 	    $("#total-qty").text(total_qty);

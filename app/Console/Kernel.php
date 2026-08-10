@@ -16,6 +16,7 @@ class Kernel extends ConsoleKernel
         Commands\AutoPurchase::class,
         Commands\DsoAlert::class,
         Commands\ResetDB::class,
+        Commands\BackfillExpenseJournal::class,
     ];
 
     /**

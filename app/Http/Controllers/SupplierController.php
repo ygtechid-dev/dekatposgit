@@ -19,6 +19,7 @@ use Spatie\Permission\Models\Permission;
 use App\Mail\SupplierCreate;
 use App\Mail\CustomerCreate;
 use Mail;
+use App\Services\JournalService;
 
 class SupplierController extends Controller
 {
@@ -48,6 +49,18 @@ class SupplierController extends Controller
                                 ['supplier_id', $request->supplier_id]
                             ])->get();
         $total_paid_amount = $request->amount;
+        $account_data = Account::select('id')->where('is_default', 1)->first();
+        $requested_payment = min(
+            (float)$total_paid_amount,
+            (float)$lims_due_purchase_data->sum(function($purchase) {
+                return $purchase->grand_total - $purchase->paid_amount;
+            })
+        );
+        $cash_balance = JournalService::cashAccountBalance($account_data ? $account_data->id : null);
+        if($cash_balance + 0.00001 < $requested_payment) {
+            return redirect()->back()->with('not_permitted', 'Saldo akun pembayaran tidak mencukupi. Saldo tersedia: ' . number_format($cash_balance, config('decimal'), ',', '.'));
+        }
+
         foreach ($lims_due_purchase_data as $key => $purchase_data) {
             if($total_paid_amount == 0)
                 break;
@@ -62,7 +75,6 @@ class SupplierController extends Controller
                 $cash_register_id = $lims_cash_register_data->id;
             else
                 $cash_register_id = null;
-            $account_data = Account::select('id')->where('is_default', 1)->first();
             if($total_paid_amount >= $due_amount) {
                 $paid_amount = $due_amount;
                 $payment_status = 2;
@@ -71,7 +83,7 @@ class SupplierController extends Controller
                 $paid_amount = $total_paid_amount;
                 $payment_status = 1;
             }
-            Payment::create([
+            $lims_payment_data = Payment::create([
                 'payment_reference' => 'ppr-'.date("Ymd").'-'.date("his"),
                 'purchase_id' => $purchase_data->id,
                 'user_id' => Auth::id(),
@@ -82,6 +94,14 @@ class SupplierController extends Controller
                 'paying_method' => 'Cash',
                 'payment_note' => $request->note
             ]);
+
+            // Jurnal otomatis: pembayaran hutang pembelian -> Dr Hutang Usaha / Cr Kas-Bank.
+            try {
+                $hutang_id = JournalService::payableAccountIdForWarehouse($purchase_data->warehouse_id);
+                $credit_id = JournalService::coaIdForCashAccount($account_data ? $account_data->id : null);
+                JournalService::postSimple(now(), 'Pembayaran pembelian ' . $lims_payment_data->payment_reference, $hutang_id, $credit_id, $paid_amount, 'purchase_payment', $lims_payment_data->id);
+            } catch (\Exception $e) {}
+
             $purchase_data->paid_amount += $paid_amount;
             $purchase_data->payment_status = $payment_status;
             $purchase_data->save();

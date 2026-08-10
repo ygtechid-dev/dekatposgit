@@ -260,7 +260,16 @@
             </tr>
         </table>
         <script type="text/javascript">
-            localStorage.clear();
+            /* Jangan hapus daftar transaksi void POS Simple. */
+            try {
+                var psKeep = ['pos_simple_void_v1'], psSaved = {};
+                for (var i = 0; i < psKeep.length; i++) {
+                    var v = localStorage.getItem(psKeep[i]);
+                    if (v !== null) psSaved[psKeep[i]] = v;
+                }
+                localStorage.clear();
+                for (var k in psSaved) localStorage.setItem(k, psSaved[k]);
+            } catch (e) { }
             function auto_print() {
                 window.print();
 

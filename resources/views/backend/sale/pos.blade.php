@@ -8,6 +8,29 @@
 .ui-menu.ui-widget.ui-widget-content.ui-autocomplete.ui-front{background:#7c5cc4;width:300px;padding:15px;position:absolute!important;z-index:9999}
 .ui-menu.ui-widget.ui-widget-content.ui-autocomplete.ui-front li.ui-menu-item{color:#fff;cursor:pointer;font-size:14px;list-style:none;padding:5px 10px;padding-left:0}
 .ui-menu.ui-widget.ui-widget-content.ui-autocomplete.ui-front li.ui-menu-item:hover{opacity:.7}
+
+/* ===== Shortcut keyboard POS ===== */
+.kbd-hint{
+    display:inline-block;font-size:10px;line-height:1;font-weight:700;
+    padding:2px 4px;margin-left:4px;border-radius:3px;
+    background:rgba(255,255,255,.25);border:1px solid rgba(255,255,255,.45);
+    color:#fff;vertical-align:middle;white-space:nowrap;
+}
+.kbd-hint.dark{background:#eef0f7;border-color:#c7cbdd;color:#4a4a68}
+/* baris keranjang yang sedang dipilih lewat keyboard */
+table.order-list tbody tr.pos-row-active > td{background:#fff3cd !important}
+table.order-list tbody tr.pos-row-active > td:first-child{box-shadow:inset 4px 0 0 0 #e28d02}
+/* kolom scan sedang aktif */
+#lims_productcodeSearch.pos-scan-focus{border-color:#6c5ce7;box-shadow:0 0 0 .15rem rgba(108,92,231,.25)}
+/* strip legenda shortcut keranjang */
+.pos-key-legend{
+    font-size:11px;color:#6b6b83;background:#f4f5fb;border:1px dashed #d3d6e8;
+    border-radius:4px;padding:4px 8px;margin-top:6px;line-height:1.7;
+}
+.pos-key-legend b{
+    display:inline-block;background:#fff;border:1px solid #c7cbdd;border-radius:3px;
+    padding:0 4px;margin:0 2px;color:#4a4a68;font-size:10px;
+}
 </style>
 @if($errors->has('phone_number'))
 <div class="alert alert-danger alert-dismissible text-center">
@@ -137,7 +160,7 @@
                                             @endif
                                             <div class="input-group pos">
                                                 @if($customer_active)
-                                                <select required name="customer_id" id="customer_id" class="selectpicker form-control" data-live-search="true" title="Select customer..." style="width: 100px">
+                                                <select required name="customer_id" id="customer_id" class="selectpicker form-control" data-live-search="true" title="Pilih pelanggan... (F3)" style="width: 100px">
                                                     <?php
                                                     $deposit = [];
                                                     $points = [];
@@ -157,7 +180,7 @@
                                                 $deposit = [];
                                                 $points = [];
                                                 ?>
-                                                <select required name="customer_id" id="customer_id" class="selectpicker form-control" data-live-search="true" title="Select customer...">
+                                                <select required name="customer_id" id="customer_id" class="selectpicker form-control" data-live-search="true" title="Pilih pelanggan... (F3)">
                                                     @foreach($lims_customer_list as $customer)
                                                     @php
                                                     $deposit[$customer->id] = $customer->deposit - $customer->expense;
@@ -238,12 +261,15 @@
                                     @endforeach
                                     <div class="col-md-12">
                                         <div class="search-box form-group">
-                                            <input type="text" name="product_code_name" id="lims_productcodeSearch" placeholder="Scan/Search product by name/code" class="form-control" />
+                                            <input type="text" name="product_code_name" id="lims_productcodeSearch" placeholder="Scan/Cari produk (F2 / Alt+S)" class="form-control" />
                                         </div>
                                     </div>
                                 </div>
                                 <div class="form-group">
                                     <div class="table-responsive transaction-list">
+                                        <div class="pos-key-legend">
+                                            Keranjang: <b>&uarr;</b><b>&darr;</b> pilih baris &middot; <b>+</b>/<b>-</b> ubah qty &middot; <b>Del</b> hapus &middot; <b>Enter</b> edit produk &middot; <b>Esc</b> kembali ke kolom scan &middot; <b>Ctrl</b>+<b>&uarr;</b>/<b>&darr;</b> pilih baris tanpa keluar dari kolom scan
+                                        </div>
                                         <table id="myTable" class="table table-hover table-striped order-list table-fixed">
                                             <thead>
                                                 <tr>
@@ -310,7 +336,7 @@
                                             <span class="totals-title">{{trans('file.Total')}}</span><span id="subtotal">{{number_format(0, $general_setting->decimal, ',', '.')}}</span>
                                         </div>
                                         <div class="col-sm-4">
-                                            <span class="totals-title">{{trans('file.Discount')}} <button type="button" class="btn btn-link btn-sm" data-toggle="modal" data-target="#order-discount-modal"> <i class="dripicons-document-edit"></i></button></span><span id="discount">{{number_format(0, $general_setting->decimal, ',', '.')}}</span>
+                                            <span class="totals-title">{{trans('file.Discount')}} <button type="button" class="btn btn-link btn-sm" data-toggle="modal" data-target="#order-discount-modal"> <i class="dripicons-document-edit"></i></button><span class="kbd-hint dark">F6</span></span><span id="discount">{{number_format(0, $general_setting->decimal, ',', '.')}}</span>
                                         </div>
                                         <div class="col-sm-4">
                                             <span class="totals-title">{{trans('file.Coupon')}} <button type="button" class="btn btn-link btn-sm" data-toggle="modal" data-target="#coupon-modal"><i class="dripicons-document-edit"></i></button></span><span id="coupon-text">{{number_format(0, $general_setting->decimal, ',', '.')}}</span>
@@ -333,12 +359,12 @@
 
                         @if(in_array("card",$options))
                         <div class="column-5">
-                            <button style="background: #0984e3" type="button" class="btn btn-sm btn-custom payment-btn" data-toggle="modal" data-target="#add-payment" id="credit-card-btn"><i class="fa fa-credit-card"></i> {{trans('file.Card')}}</button>
+                            <button style="background: #0984e3" type="button" class="btn btn-sm btn-custom payment-btn" data-toggle="modal" data-target="#add-payment" id="credit-card-btn"><i class="fa fa-credit-card"></i> {{trans('file.Card')}}<span class="kbd-hint">Alt+C</span></button>
                         </div>
                         @endif
                         @if(in_array("cash",$options))
                         <div class="column-5">
-                            <button style="background: #00cec9" type="button" class="btn btn-sm btn-custom payment-btn" data-toggle="modal" data-target="#add-payment" id="cash-btn"><i class="fa fa-money"></i> {{trans('file.Cash')}}</button>
+                            <button style="background: #00cec9" type="button" class="btn btn-sm btn-custom payment-btn" data-toggle="modal" data-target="#add-payment" id="cash-btn"><i class="fa fa-money"></i> {{trans('file.Cash')}}<span class="kbd-hint">F4 / Alt+B</span></button>
                         </div>
                         @endif
                         @if(in_array("paypal",$options) && $lims_pos_setting_data && (strlen($lims_pos_setting_data->paypal_live_api_username)>0) && (strlen($lims_pos_setting_data->paypal_live_api_password)>0) && (strlen($lims_pos_setting_data->paypal_live_api_secret)>0))
@@ -347,36 +373,36 @@
                         </div>
                         @endif
                         <div class="column-5">
-                            <button style="background-color: #e28d02" type="button" class="btn btn-sm btn-custom" id="draft-btn"><i class="dripicons-flag"></i> {{trans('file.Draft')}}</button>
+                            <button style="background-color: #e28d02" type="button" class="btn btn-sm btn-custom" id="draft-btn"><i class="dripicons-flag"></i> {{trans('file.Draft')}}<span class="kbd-hint">F8</span></button>
                         </div>
                         @if(in_array("cheque",$options))
                         <div class="column-5">
-                            <button style="background-color: #fd7272" type="button" class="btn btn-sm btn-custom payment-btn" data-toggle="modal" data-target="#add-payment" id="cheque-btn"><i class="fa fa-money"></i> {{trans('file.Cheque')}}</button>
+                            <button style="background-color: #fd7272" type="button" class="btn btn-sm btn-custom payment-btn" data-toggle="modal" data-target="#add-payment" id="cheque-btn"><i class="fa fa-money"></i> {{trans('file.Cheque')}}<span class="kbd-hint">Alt+Q</span></button>
                         </div>
                         @endif
                         @if(in_array("gift_card",$options))
                         <div class="column-5">
-                            <button style="background-color: #5f27cd" type="button" class="btn btn-sm btn-custom payment-btn" data-toggle="modal" data-target="#add-payment" id="gift-card-btn"><i class="fa fa-credit-card-alt"></i> {{trans('file.Gift Card')}}</button>
+                            <button style="background-color: #5f27cd" type="button" class="btn btn-sm btn-custom payment-btn" data-toggle="modal" data-target="#add-payment" id="gift-card-btn"><i class="fa fa-credit-card-alt"></i> {{trans('file.Gift Card')}}<span class="kbd-hint">Alt+V</span></button>
                         </div>
                         @endif
                         @if(in_array("deposit",$options))
                         <div class="column-5">
-                            <button style="background-color: #b33771" type="button" class="btn btn-sm btn-custom payment-btn" data-toggle="modal" data-target="#add-payment" id="deposit-btn"><i class="fa fa-university"></i> {{trans('file.Deposit')}}</button>
+                            <button style="background-color: #b33771" type="button" class="btn btn-sm btn-custom payment-btn" data-toggle="modal" data-target="#add-payment" id="deposit-btn"><i class="fa fa-university"></i> {{trans('file.Deposit')}}<span class="kbd-hint">Alt+E</span></button>
                         </div>
                         @endif
                         @if($lims_reward_point_setting_data && $lims_reward_point_setting_data->is_active)
                         <div class="column-5">
-                            <button style="background-color: #319398" type="button" class="btn btn-sm btn-custom payment-btn" data-toggle="modal" data-target="#add-payment" id="point-btn"><i class="dripicons-rocket"></i> {{trans('file.Points')}}</button>
+                            <button style="background-color: #319398" type="button" class="btn btn-sm btn-custom payment-btn" data-toggle="modal" data-target="#add-payment" id="point-btn"><i class="dripicons-rocket"></i> {{trans('file.Points')}}<span class="kbd-hint">Alt+O</span></button>
                         </div>
                         @endif
                         <div class="column-5">
-                            <button style="background-color: #6c5ce7" type="button" class="btn btn-sm btn-custom payment-btn" data-toggle="modal" data-target="#add-payment" id="credit-due-btn"><i class="fa fa-book"></i> Piutang</button>
+                            <button style="background-color: #6c5ce7" type="button" class="btn btn-sm btn-custom payment-btn" data-toggle="modal" data-target="#add-payment" id="credit-due-btn"><i class="fa fa-book"></i> Piutang<span class="kbd-hint">F7</span></button>
                         </div>
                         <div class="column-5">
-                            <button style="background-color: #d63031;" type="button" class="btn btn-sm btn-custom" id="cancel-btn" onclick="return confirmCancel()"><i class="fa fa-close"></i> {{trans('file.Cancel')}}</button>
+                            <button style="background-color: #d63031;" type="button" class="btn btn-sm btn-custom" id="cancel-btn" onclick="return confirmCancel()"><i class="fa fa-close"></i> {{trans('file.Cancel')}}<span class="kbd-hint">F10</span></button>
                         </div>
                         <div class="column-5">
-                            <button style="background-color: #ffc107;" type="button" class="btn btn-sm btn-custom" data-toggle="modal" data-target="#recentTransaction"><i class="dripicons-clock"></i> {{trans('file.Recent Transaction')}}</button>
+                            <button style="background-color: #ffc107;" type="button" class="btn btn-sm btn-custom" data-toggle="modal" id="recent-transaction-btn" data-target="#recentTransaction"><i class="dripicons-clock"></i> {{trans('file.Recent Transaction')}}<span class="kbd-hint">F9</span></button>
                         </div>
                     </div>
                 </div>
@@ -394,7 +420,7 @@
                                 <div class="col-md-10">
                                     <div class="row">
                                         <div class="col-md-3 mt-1">
-                                            <label>{{trans('file.Recieved Amount')}} *</label>
+                                            <label>{{trans('file.Recieved Amount')}} * <span class="kbd-hint dark">F4 = uang pas</span></label>
                                             <input type="text" name="paying_amount" class="form-control numkey" required step="any">
                                         </div>
                                         <div class="col-md-3 mt-1">
@@ -467,7 +493,7 @@
                                         </div>
                                     </div>
                                     <div class="mt-3">
-                                        <button id="submit-btn" type="button" class="btn btn-primary">{{trans('file.submit')}}</button>
+                                        <button id="submit-btn" type="button" class="btn btn-primary">{{trans('file.submit')}}<span class="kbd-hint">Enter</span></button>
                                     </div>
                                 </div>
                                 <div class="col-md-2 qc" data-initial="1">
@@ -706,12 +732,12 @@
                                 ])->first();
                                 ?>
 
-                                @if($today_sale_permission_active)
+                                @if($today_sale_permission_active && Auth::user()->role_id <= 2)
                                 <li class="nav-item">
                                     <a href="" id="today-sale-btn" data-toggle="tooltip" title="{{trans('file.Today Sale')}}"><i class="dripicons-shopping-bag"></i></a>
                                 </li>
                                 @endif
-                                @if($today_profit_permission_active)
+                                @if($today_profit_permission_active && Auth::user()->role_id <= 2)
                                 <li class="nav-item">
                                     <a href="" id="today-profit-btn" data-toggle="tooltip" title="{{trans('file.Today Profit')}}"><i class="dripicons-graph-line"></i></a>
                                 </li>
@@ -1112,11 +1138,18 @@
                             <div class="row">
                                 <div class="col-md-6 form-group warehouse-section">
                                     <label>{{trans('file.Warehouse')}} *</strong> </label>
+                                    @if(\Auth::user()->role_id > 2)
+                                        {{-- Gudang kasir ditetapkan admin, tidak boleh dipilih sendiri. --}}
+                                        @php $assigned_warehouse = $lims_warehouse_list->firstWhere('id', \Auth::user()->warehouse_id); @endphp
+                                        <input type="hidden" name="warehouse_id" value="{{ $assigned_warehouse->id ?? '' }}">
+                                        <input type="text" class="form-control" value="{{ $assigned_warehouse->name ?? 'Belum ditetapkan admin' }}" readonly>
+                                    @else
                                     <select required name="warehouse_id" class="selectpicker form-control" data-live-search="true" data-live-search-style="begins" title="Select warehouse...">
                                         @foreach($lims_warehouse_list as $warehouse)
                                         <option value="{{$warehouse->id}}">{{$warehouse->name}}</option>
                                         @endforeach
                                     </select>
+                                    @endif
                                 </div>
                                 <div class="col-md-6 form-group">
                                     <label>Persediaan Uang Kembalian *</strong> </label>
@@ -1140,15 +1173,20 @@
                             <button type="button" data-dismiss="modal" aria-label="Close" class="close"><span aria-hidden="true"><i class="dripicons-cross"></i></span></button>
                         </div>
                         <div class="modal-body">
+                            @if(\Auth::user()->role_id <= 2)
                             <p>{{trans('file.Please review the transaction and payments.')}}</p>
+                            @else
+                            <p>Hitung seluruh uang di laci kasir, lalu masukkan jumlahnya apa adanya. Rincian penjualan hanya bisa dilihat oleh admin saat approval.</p>
+                            @endif
                             <div class="row">
                                 <div class="col-md-12">
                                     <table class="table table-hover">
                                         <tbody>
                                             <tr>
-                                                <td>{{trans('file.Cash in Hand')}}:</td>
+                                                <td>Modal Kembalian:</td>
                                                 <td id="cash_in_hand" class="text-right">0</td>
                                             </tr>
+                                            @if(\Auth::user()->role_id <= 2)
                                             <tr>
                                                 <td>{{trans('file.Total Sale Amount')}}:</td>
                                                 <td id="total_sale_amount" class="text-right"></td>
@@ -1209,6 +1247,7 @@
                                                 <td><strong>Kas Sistem:</strong></td>
                                                 <td id="expected_cash_amount" class="text-right"></td>
                                             </tr>
+                                            @endif
                                         </tbody>
                                     </table>
                                 </div>
@@ -1217,13 +1256,15 @@
                                         @csrf
                                         <input type="hidden" name="cash_register_id">
                                         <div class="form-group">
-                                            <label>Uang Fisik Dihitung *</label>
+                                            <label>{{ \Auth::user()->role_id <= 2 ? 'Uang Fisik Dihitung *' : 'Uang Fisik Dihitung / Setor Kasir *' }}</label>
                                             <input type="number" step="any" name="closing_cash_amount" required class="form-control">
                                         </div>
+                                        @if(\Auth::user()->role_id <= 2)
                                         <div class="form-group">
-                                            <label>Setor Kasir *</label>
-                                            <input type="number" step="any" name="deposit_amount" required class="form-control">
+                                            <label>Setor Kasir</label>
+                                            <input type="number" step="any" name="deposit_amount" class="form-control">
                                         </div>
+                                        @endif
                                         <div class="form-group">
                                             <label>Catatan Tutup Kasir</label>
                                             <textarea name="closing_note" class="form-control"></textarea>
@@ -1693,6 +1734,13 @@
             type: "GET",
             success: function(data) {
                 $('#register-details-modal #cash_in_hand').text(formatRupiah(data['cash_in_hand']));
+                $('#register-details-modal input[name=cash_register_id]').val(data['id']);
+                // Kasir tidak boleh melihat angka sistem, dan kolom setoran tidak di-prefill
+                // supaya setoran benar-benar berasal dari hasil hitungan uang fisik.
+                $('#register-details-modal input[name=closing_cash_amount]').val('');
+                $('#register-details-modal input[name=deposit_amount]').val('');
+                if (data['restricted']) return;
+
                 $('#register-details-modal #total_sale_amount').text(formatRupiah(data['total_sale_amount']));
                 $('#register-details-modal #total_payment').text(formatRupiah(data['total_payment']));
                 $('#register-details-modal #cash_payment').text(formatRupiah(data['cash_payment']));
@@ -1700,14 +1748,11 @@
                 $('#register-details-modal #credit_card_payment').text(formatRupiah(data['credit_card_payment']));
                 $('#register-details-modal #cheque_payment').text(formatRupiah(data['cheque_payment']));
                 $('#register-details-modal #gift_card_payment').text(formatRupiah(data['gift_card_payment']));
-                $('#register-details-modal #deposit_payment').text(data['deposit_payment']);
-                $('#register-details-modal #paypal_payment').text(data['paypal_payment']);
-                $('#register-details-modal #total_sale_return').text(data['total_sale_return']);
-                $('#register-details-modal #total_expense').text(data['total_expense']);
-                $('#register-details-modal #expected_cash_amount').text(data['expected_cash_amount']);
-                $('#register-details-modal input[name=cash_register_id]').val(data['id']);
-                $('#register-details-modal input[name=closing_cash_amount]').val(data['expected_cash_amount']);
-                $('#register-details-modal input[name=deposit_amount]').val(data['expected_cash_amount']);
+                $('#register-details-modal #deposit_payment').text(formatRupiah(data['deposit_payment']));
+                $('#register-details-modal #paypal_payment').text(formatRupiah(data['paypal_payment']));
+                $('#register-details-modal #total_sale_return').text(formatRupiah(data['total_sale_return']));
+                $('#register-details-modal #total_expense').text(formatRupiah(data['total_expense']));
+                $('#register-details-modal #expected_cash_amount').text(formatRupiah(data['expected_cash_amount']));
             }
         });
         $('#register-details-modal').modal('show');
@@ -1761,9 +1806,16 @@
     if (role_id > 2) {
         $('#biller_id').addClass('d-none');
         $('#warehouse_id').addClass('d-none');
+        // Kalau user kasir belum di-set billernya, pakai biller default POS Setting.
+        // Tanpa ini penjualan tersimpan dengan biller_id NULL dan retur penjualan gagal.
+        if (!biller_id) {
+            biller_id = $("input[name='biller_id_hidden']").val();
+        }
         $('select[name=warehouse_id]').val(warehouse_id);
         $('select[name=biller_id]').val(biller_id);
-        isCashRegisterAvailable(warehouse_id);
+        // Pengecekan kasir dijalankan sekali saja di bawah (baris isCashRegisterAvailable(id)).
+        // Dulu dipanggil di sini juga dengan sumber warehouse berbeda, sehingga dua request
+        // balapan dan yang menjawab "available" bisa memunculkan modal walau kasir masih open.
     } else {
         if (getSavedValue("warehouse_id")) {
             warehouse_id = getSavedValue("warehouse_id");
@@ -1793,38 +1845,62 @@
         customer_group_rate = (data / 100);
     });
 
-    var id = $("#warehouse_id").val();
-    $.get('sales/getproduct/' + id, function(data) {
-        lims_product_array = [];
-        product_code = data[0];
-        product_name = data[1];
-        product_qty = data[2];
-        product_type = data[3];
-        product_id = data[4];
-        product_list = data[5];
-        qty_list = data[6];
-        product_warehouse_price = data[7];
-        batch_no = data[8];
-        product_batch_id = data[9];
-        is_embeded = data[11];
-        $.each(product_code, function(index) {
-            if (is_embeded[index])
-                lims_product_array.push(product_code[index] + ' (' + product_name[index] + ')|' + is_embeded[index]);
-            else
-                lims_product_array.push(product_code[index] + ' (' + product_name[index] + ')');
+    function loadProductList(selected_warehouse_id) {
+        if (!selected_warehouse_id) return;
+        $.get('sales/getproduct/' + selected_warehouse_id, function(data) {
+            lims_product_array = [];
+            product_code = data[0];
+            product_name = data[1];
+            product_qty = data[2];
+            product_type = data[3];
+            product_id = data[4];
+            product_list = data[5];
+            qty_list = data[6];
+            product_warehouse_price = data[7];
+            batch_no = data[8];
+            product_batch_id = data[9];
+            is_embeded = data[11];
+            $.each(product_code, function(index) {
+                if (is_embeded[index])
+                    lims_product_array.push(product_code[index] + ' (' + product_name[index] + ')|' + is_embeded[index]);
+                else
+                    lims_product_array.push(product_code[index] + ' (' + product_name[index] + ')');
+            });
         });
-    });
+    }
+
+    // Kalau dropdown gudang kosong (mis. gudang user bukan tipe toko), .val() = null.
+    // Jangan biarkan null dikirim ke server: hasilnya selalu "available" dan modal muncul terus.
+    var id = $("#warehouse_id").val() || warehouse_id;
+    loadProductList(id);
 
     isCashRegisterAvailable(id);
 
-    function isCashRegisterAvailable(warehouse_id) {
+    function isCashRegisterAvailable(check_warehouse_id) {
+        if (!check_warehouse_id) {
+            $("#register-details-btn").addClass('d-none');
+            alert('Gudang/toko POS belum ditentukan. Hubungi admin untuk menetapkan gudang bertipe Toko.');
+            return;
+        }
         $.ajax({
-            url: 'cash-register/check-availability/' + warehouse_id,
+            url: 'cash-register/check-availability/' + check_warehouse_id,
             type: "GET",
             success: function(data) {
+                // Kasir sedang open, tapi di gudang lain daripada yang sedang dipilih POS
+                // (biasanya nilai lama dari localStorage atau default POS Setting).
+                // Sinkronkan gudang POS ke gudang register, jangan minta buka kasir lagi.
+                if (data.status == 'open_other_warehouse') {
+                    warehouse_id = data.warehouse_id;
+                    $('#warehouse_id').val(data.warehouse_id);
+                    $('.selectpicker').selectpicker('refresh');
+                    localStorage.setItem('warehouse_id', data.warehouse_id);
+                    loadProductList(data.warehouse_id);
+                    $("#register-details-btn").removeClass('d-none');
+                    return;
+                }
                 if (data.status == 'available') {
                     $("#register-details-btn").addClass('d-none');
-                    $('#cash-register-modal select[name=warehouse_id]').val(warehouse_id);
+                    $('#cash-register-modal select[name=warehouse_id]').val(check_warehouse_id);
 
                     if (role_id <= 2)
                         $("#cash-register-modal .warehouse-section").removeClass('d-none');
@@ -2753,11 +2829,12 @@
     function checkDiscount(qty, flag) {
         var customer_id = $('#customer_id').val();
         var product_id = $('table.order-list tbody tr:nth-child(' + (rowindex + 1) + ') .product-id').val();
+        var sale_unit = $('table.order-list tbody tr:nth-child(' + (rowindex + 1) + ') .sale-unit').val();
         if (flag) {
             $.ajax({
                 type: 'GET',
                 async: false,
-                url: 'sales/check-discount?qty=' + qty + '&customer_id=' + customer_id + '&product_id=' + product_id,
+                url: 'sales/check-discount?qty=' + qty + '&customer_id=' + customer_id + '&product_id=' + product_id + '&sale_unit=' + encodeURIComponent(sale_unit || ''),
                 success: function(data) {
                     //console.log(data);
                     pos = product_code.indexOf($('table.order-list tbody tr:nth-child(' + (rowindex + 1) + ') .product-code').val());
@@ -3112,6 +3189,290 @@
         },
         dom: 'tp'
     });
+</script>
+<script type="text/javascript">
+/* =========================================================================
+   SHORTCUT KEYBOARD POS  (supaya kasir tidak perlu sering pakai mouse)
+
+   TOMBOL AKSI (F-key + alternatif Alt+huruf):
+     F2  / Alt+S : fokus ke kolom Scan/Cari produk
+     F3  / Alt+P : buka daftar Pelanggan
+     F4  / Alt+B : bayar Tunai (Cash)
+     F6  / Alt+D : Diskon order
+     F7  / Alt+K : Piutang / Kredit
+     F8  / Alt+G : simpan Draft
+     F9  / Alt+T : Transaksi Terakhir
+     F10 / Alt+X : Batal
+     Alt+C Kartu, Alt+Q Cek, Alt+V Gift Card, Alt+E Deposit, Alt+O Poin
+
+   NAVIGASI KERANJANG (saat tidak sedang mengetik):
+     Panah atas/bawah  : pilih baris   (Ctrl+panah: jalan juga dari kolom scan)
+     + / -             : tambah / kurang qty baris terpilih
+     Delete            : hapus baris terpilih
+     Enter             : buka modal edit produk baris terpilih
+     Esc               : keluar dari kolom scan -> masuk mode keranjang
+     Ketik huruf/angka : otomatis balik ke kolom scan (aman untuk barcode scanner)
+
+   DI DALAM MODAL:
+     Enter : tombol utama (Finalize Sale -> Submit, Edit produk -> Update)
+     F4    : isi "Recieved Amount" = uang pas (grand total)
+     Esc   : tutup modal (bawaan bootstrap)
+   ========================================================================= */
+(function($) {
+    if (!$) return;
+
+    var $doc = $(document);
+    var selIndex = -1;
+
+    function rows() {
+        return $('table.order-list tbody tr');
+    }
+
+    function isTyping(el) {
+        if (!el) return false;
+        var tag = (el.tagName || '').toUpperCase();
+        return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || el.isContentEditable === true;
+    }
+
+    function openModal() {
+        return $('.modal.show, .modal.in').last();
+    }
+
+    function isModalOpen() {
+        return openModal().length > 0;
+    }
+
+    function paintRow() {
+        var $r = rows();
+        $r.removeClass('pos-row-active');
+        if (!$r.length) {
+            selIndex = -1;
+            return;
+        }
+        if (selIndex < 0) return;
+        if (selIndex > $r.length - 1) selIndex = $r.length - 1;
+        var el = $r.eq(selIndex).addClass('pos-row-active').get(0);
+        if (el && el.scrollIntoView) {
+            try { el.scrollIntoView({ block: 'nearest' }); } catch (err) { }
+        }
+    }
+
+    function moveSel(delta) {
+        var n = rows().length;
+        if (!n) { selIndex = -1; return; }
+        if (selIndex < 0) selIndex = (delta > 0 ? 0 : n - 1);
+        else selIndex = selIndex + delta;
+        if (selIndex < 0) selIndex = 0;
+        if (selIndex > n - 1) selIndex = n - 1;
+        paintRow();
+    }
+
+    function selRow() {
+        var $r = rows();
+        if (selIndex < 0 || selIndex > $r.length - 1) return null;
+        return $r.eq(selIndex);
+    }
+
+    function focusScan() {
+        selIndex = -1;
+        rows().removeClass('pos-row-active');
+        var $s = $('#lims_productcodeSearch');
+        if ($s.length) { $s.focus(); $s.select(); }
+    }
+
+    /* pakai click() native supaya handler jQuery + inline onclick masing-masing
+       hanya jalan sekali (jQuery .trigger('click') bisa menembak dua kali) */
+    function hit($el) {
+        if ($el && $el.length && $el.get(0)) { $el.get(0).click(); return true; }
+        return false;
+    }
+
+    var actions = {
+        scan: focusScan,
+        customer: function() {
+            var $c = $('#customer_id');
+            if (!$c.length) return;
+            var $btn = $c.closest('.bootstrap-select').find('button.dropdown-toggle').first();
+            if ($btn.length) hit($btn);
+            else $c.focus();
+        },
+        cash: function() { hit($('#cash-btn')); },
+        card: function() { hit($('#credit-card-btn')); },
+        cheque: function() { hit($('#cheque-btn')); },
+        giftcard: function() { hit($('#gift-card-btn')); },
+        deposit: function() { hit($('#deposit-btn')); },
+        points: function() { hit($('#point-btn')); },
+        credit: function() { hit($('#credit-due-btn')); },
+        draft: function() { hit($('#draft-btn')); },
+        discount: function() { $('#order-discount-modal').modal('show'); },
+        recent: function() { $('#recentTransaction').modal('show'); },
+        cancel: function() { hit($('#cancel-btn')); }
+    };
+
+    var fMap = {
+        F2: 'scan', F3: 'customer', F4: 'cash', F6: 'discount',
+        F7: 'credit', F8: 'draft', F9: 'recent', F10: 'cancel'
+    };
+    var altMap = {
+        s: 'scan', p: 'customer', b: 'cash', c: 'card', q: 'cheque',
+        v: 'giftcard', e: 'deposit', o: 'points', k: 'credit',
+        g: 'draft', d: 'discount', t: 'recent', x: 'cancel'
+    };
+
+    $doc.on('keydown.posShortcut', function(e) {
+        var key = e.key;
+        if (!key) return;
+        var el = e.target;
+
+        /* ---------- saat ada modal terbuka ---------- */
+        if (isModalOpen()) {
+            var $m = openModal();
+            var id = $m.attr('id');
+            var tag = (el.tagName || '').toUpperCase();
+
+            if (key === 'F4' && id === 'add-payment') {
+                e.preventDefault();
+                var gt = $('input[name="grand_total"]').val();
+                $('input[name="paying_amount"]').val(gt).trigger('input').trigger('keyup');
+                return;
+            }
+            if (key === 'Enter' && tag !== 'TEXTAREA') {
+                if (id === 'add-payment') {
+                    e.preventDefault();
+                    hit($('#submit-btn'));
+                    return;
+                }
+                if (id === 'editModal') {
+                    e.preventDefault();
+                    hit($('button[name="update_btn"]'));
+                    $('#editModal').modal('hide');
+                    return;
+                }
+                var $ok = $m.find('.modal-body button.btn-primary:visible').first();
+                if ($ok.length) { e.preventDefault(); hit($ok); return; }
+            }
+            return; /* shortcut lain nonaktif selama modal terbuka */
+        }
+
+        /* ---------- Ctrl + panah: pilih baris tanpa keluar dari kolom scan ---------- */
+        if (e.ctrlKey && !e.altKey && (key === 'ArrowUp' || key === 'ArrowDown')) {
+            e.preventDefault();
+            moveSel(key === 'ArrowDown' ? 1 : -1);
+            return;
+        }
+
+        /* ---------- tombol aksi: F-key / Alt+huruf ---------- */
+        var name = null;
+        if (!e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey) {
+            name = fMap[key] || null;
+        } else if (e.altKey && !e.ctrlKey && !e.metaKey) {
+            name = altMap[(key + '').toLowerCase()] || null;
+        }
+        if (name && actions[name]) {
+            e.preventDefault();
+            e.stopPropagation();
+            actions[name]();
+            return;
+        }
+
+        /* ---------- Esc dari kolom scan -> mode keranjang ---------- */
+        if (key === 'Escape') {
+            if ($('.ui-autocomplete:visible').length) return; /* biarkan menu autocomplete tertutup dulu */
+            if (el && el.id === 'lims_productcodeSearch') {
+                $(el).blur();
+                if (rows().length && selIndex < 0) { selIndex = 0; paintRow(); }
+                return;
+            }
+        }
+
+        /* ---------- navigasi keranjang: hanya kalau tidak sedang mengetik ---------- */
+        if (isTyping(el)) return;
+
+        if (key === 'ArrowUp') { e.preventDefault(); moveSel(-1); return; }
+        if (key === 'ArrowDown') { e.preventDefault(); moveSel(1); return; }
+
+        var $row = selRow();
+
+        if (key === '+' || key === 'Add' || key === '=') {
+            e.preventDefault();
+            if ($row) hit($row.find('.plus'));
+            return;
+        }
+        if (key === '-' || key === 'Subtract' || key === '_') {
+            e.preventDefault();
+            if ($row) hit($row.find('.minus'));
+            return;
+        }
+        if (key === 'Delete') {
+            e.preventDefault();
+            if ($row) {
+                var keep = selIndex;
+                hit($row.find('.ibtnDel'));
+                selIndex = Math.min(keep, rows().length - 1);
+                paintRow();
+            }
+            return;
+        }
+        if (key === 'Enter') {
+            e.preventDefault();
+            if ($row) hit($row.find('.edit-product'));
+            return;
+        }
+
+        /* ketikan biasa / barcode scanner -> lempar ke kolom scan (tanpa preventDefault
+           supaya karakternya tetap masuk ke input) */
+        if (key.length === 1 && !e.ctrlKey && !e.altKey && !e.metaKey) {
+            var $s = $('#lims_productcodeSearch');
+            if ($s.length && document.activeElement !== $s.get(0)) $s.focus();
+        }
+    });
+
+    /* klik baris juga menandai baris terpilih */
+    $doc.on('click', 'table.order-list tbody tr', function() {
+        selIndex = $(this).index();
+        paintRow();
+    });
+
+    /* highlight kolom scan saat aktif */
+    $doc.on('focus', '#lims_productcodeSearch', function() { $(this).addClass('pos-scan-focus'); });
+    $doc.on('blur', '#lims_productcodeSearch', function() { $(this).removeClass('pos-scan-focus'); });
+
+    /* produk baru selalu masuk di baris paling atas -> jadikan baris terpilih */
+    $(function() {
+        rows().removeClass('pos-row-active'); /* bersihkan sisa highlight dari localStorage */
+        var tb = document.querySelector('table.order-list tbody');
+        if (tb && window.MutationObserver) {
+            var last = tb.children.length;
+            new MutationObserver(function() {
+                var n = tb.children.length;
+                if (n === last) return;
+                if (n > last) selIndex = 0;
+                else if (selIndex > n - 1) selIndex = n - 1;
+                last = n;
+                paintRow();
+            }).observe(tb, { childList: true });
+        }
+        /* fokus awal langsung di kolom scan */
+        setTimeout(focusScan, 300);
+
+        /* modal diskon: langsung fokus ke kolom nilai */
+        $('#order-discount-modal').on('shown.bs.modal', function() {
+            $('#order-discount-val').focus().select();
+        });
+        /* modal pembayaran: langsung fokus ke kolom uang diterima */
+        $('#add-payment').on('shown.bs.modal', function() {
+            $('#add-payment input[name="paying_amount"]').focus().select();
+        });
+        /* modal edit produk: langsung fokus ke qty */
+        $('#editModal').on('shown.bs.modal', function() {
+            $('#editModal input[name="edit_qty"]').focus().select();
+        });
+        /* setelah modal ditutup, balikkan fokus ke kolom scan */
+        $doc.on('hidden.bs.modal', '.modal', function() {
+            if (!isModalOpen()) setTimeout(focusScan, 100);
+        });
+    });
+})(window.jQuery);
 </script>
 <script type="text/javascript" src="https://js.stripe.com/v3/"></script>
 @endpush

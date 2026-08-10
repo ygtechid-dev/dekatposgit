@@ -297,6 +297,66 @@
 						            </td>
 						        </tr>
 
+						        {{-- Kasir / Cash Register. Kolom dipetakan ke aksi kasir:
+						             Lihat = buka menu & halaman kasir, Tambah = buka kasir (modal awal),
+						             Edit = tutup & setor kasir, Hapus = approve setoran (khusus admin keuangan). --}}
+						        <tr class="cash-register-row">
+						            <td>
+						                Kasir (Cash Register)
+						                <div class="text-muted" style="font-size:11px;line-height:1.5">
+						                    Lihat = buka menu &middot; Tambah = buka kasir &middot; Edit = tutup &amp; setor &middot; Hapus = approve setoran
+						                </div>
+						            </td>
+						            <td class="text-center">
+						                <div class="icheckbox_square-blue" aria-checked="false" aria-disabled="false">
+							                <div class="checkbox">
+								                @if(in_array("cash_register-index", $all_permission))
+								                <input type="checkbox" value="1" id="cash_register-index" name="cash_register-index" checked />
+								                @else
+								                <input type="checkbox" value="1" id="cash_register-index" name="cash_register-index">
+								                @endif
+								                <label for="cash_register-index"></label>
+								            </div>
+						            	</div>
+						            </td>
+						            <td class="text-center">
+						                <div class="icheckbox_square-blue" aria-checked="false" aria-disabled="false">
+							                <div class="checkbox">
+								                @if(in_array("cash_register-add", $all_permission))
+								                <input type="checkbox" value="1" id="cash_register-add" name="cash_register-add" checked />
+								                @else
+								                <input type="checkbox" value="1" id="cash_register-add" name="cash_register-add">
+								                @endif
+								                <label for="cash_register-add"></label>
+								            </div>
+						            	</div>
+						            </td>
+						            <td class="text-center">
+						                <div class="icheckbox_square-blue" aria-checked="false" aria-disabled="false">
+							                <div class="checkbox">
+								                @if(in_array("cash_register-edit", $all_permission))
+								                <input type="checkbox" value="1" id="cash_register-edit" name="cash_register-edit" checked />
+								                @else
+								                <input type="checkbox" value="1" id="cash_register-edit" name="cash_register-edit">
+								                @endif
+								                <label for="cash_register-edit"></label>
+								            </div>
+						            	</div>
+						            </td>
+						            <td class="text-center">
+						                <div class="icheckbox_square-blue" aria-checked="false" aria-disabled="false">
+							                <div class="checkbox">
+								                @if(in_array("cash_register-delete", $all_permission))
+								                <input type="checkbox" value="1" id="cash_register-delete" name="cash_register-delete" checked />
+								                @else
+								                <input type="checkbox" value="1" id="cash_register-delete" name="cash_register-delete">
+								                @endif
+								                <label for="cash_register-delete"></label>
+								            </div>
+						            	</div>
+						            </td>
+						        </tr>
+
 						        <tr class="expense-row">
 						            <td>{{trans('file.Expense')}}</td>
 						            <td class="text-center">

@@ -34,6 +34,7 @@ use App\Traits\TenantInfo;
 
 class QuotationController extends Controller
 {
+    use \App\Traits\MoneyInput;
     use TenantInfo, MailInfo, StaffAccess;
 
     public function index(Request $request)
@@ -376,6 +377,9 @@ class QuotationController extends Controller
     public function store(Request $request)
     {
         $data = $request->except('document');
+        // Jaring pengaman: angka bisa datang dalam format tampilan "50.000,00".
+        // Tanpa ini (float)"50.000,00" dibaca PHP sebagai 50 -> total mengecil 1000x.
+        $data = $this->normalizeMoneyInput($data);
         //return dd($data);
         $data['user_id'] = Auth::id();
         $document = $request->document;
@@ -770,6 +774,9 @@ class QuotationController extends Controller
     public function update(Request $request, $id)
     {
         $data = $request->except('document');
+        // Jaring pengaman: angka bisa datang dalam format tampilan "50.000,00".
+        // Tanpa ini (float)"50.000,00" dibaca PHP sebagai 50 -> total mengecil 1000x.
+        $data = $this->normalizeMoneyInput($data);
         //return dd($data);
         $document = $request->document;
         $lims_quotation_data = Quotation::find($id);

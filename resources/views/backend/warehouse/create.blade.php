@@ -302,16 +302,40 @@
             loadRackList(warehouse_id);
         });
 
+        // URL absolut lewat url()/route(). Sebelumnya dipakai URL relatif
+        // ('racks/' + id) yang salah arah kalau halaman gudang dibuka dari
+        // path bertingkat, dan tidak ada satu pun handler error - jadi kalau
+        // request-nya gagal (izin kurang, sesi habis, tabel racks belum ada)
+        // modal ini diam saja dan terlihat seperti tambah rak tidak berfungsi.
+        var RACK_LIST_URL  = "{{ url('racks/warehouse') }}";
+        var RACK_STORE_URL = "{{ route('rack.store') }}";
+        var RACK_BASE_URL  = "{{ url('racks') }}";
+
+        function rackAjaxError(xhr) {
+            if (xhr.responseJSON && xhr.responseJSON.message) {
+                alert(xhr.responseJSON.message);
+            }
+            else if (xhr.status === 419) {
+                alert('Sesi sudah habis. Muat ulang halaman lalu coba lagi.');
+            }
+            else if (xhr.status === 403) {
+                alert('Anda tidak punya izin untuk mengelola rak.');
+            }
+            else {
+                alert('Gagal menyimpan rak. Pastikan tabel "racks" sudah dibuat di database.');
+            }
+        }
+
         $(document).on('click', '#rack-add-btn', function() {
             var warehouse_id = $("#rack-warehouse-id").val();
-            var name = $("#rack-name-input").val();
+            var name = $.trim($("#rack-name-input").val());
             if(!name) {
                 alert('Nama rak harus diisi');
                 return;
             }
             $.ajax({
                 type: 'POST',
-                url: '{{route("rack.store")}}',
+                url: RACK_STORE_URL,
                 data: {
                     warehouse_id: warehouse_id,
                     name: name
@@ -319,7 +343,8 @@
                 success: function(data) {
                     $("#rack-name-input").val('');
                     loadRackList(warehouse_id);
-                }
+                },
+                error: rackAjaxError
             });
         });
 
@@ -328,24 +353,31 @@
             var rack_id = $(this).data('id');
             var warehouse_id = $("#rack-warehouse-id").val();
             $.ajax({
-                type: 'DELETE',
-                url: 'racks/' + rack_id,
+                type: 'POST',
+                url: RACK_BASE_URL + '/' + rack_id,
+                data: { _method: 'DELETE' },
                 success: function(data) {
                     loadRackList(warehouse_id);
-                }
+                },
+                error: rackAjaxError
             });
         });
 
         function loadRackList(warehouse_id) {
-            $.get('racks/warehouse/' + warehouse_id, function(data) {
-                var html = '';
-                $.each(data, function(i, rack) {
-                    html += '<tr><td>' + rack.name + '</td><td><button type="button" class="btn btn-link rack-delete-btn" data-id="' + rack.id + '"><i class="dripicons-trash"></i></button></td></tr>';
-                });
-                if(data.length == 0) {
-                    html = '<tr><td colspan="2">Belum ada rak</td></tr>';
-                }
-                $("#rack-list-body").html(html);
+            $.ajax({
+                type: 'GET',
+                url: RACK_LIST_URL + '/' + warehouse_id,
+                success: function(data) {
+                    var html = '';
+                    $.each(data, function(i, rack) {
+                        html += '<tr><td>' + $('<div>').text(rack.name).html() + '</td><td><button type="button" class="btn btn-link rack-delete-btn" data-id="' + rack.id + '"><i class="dripicons-trash"></i></button></td></tr>';
+                    });
+                    if(data.length == 0) {
+                        html = '<tr><td colspan="2">Belum ada rak</td></tr>';
+                    }
+                    $("#rack-list-body").html(html);
+                },
+                error: rackAjaxError
             });
         }
   });

@@ -36,6 +36,7 @@ use App\Services\JournalService;
 
 class ReturnController extends Controller
 {
+    use \App\Traits\MoneyInput;
     use TenantInfo, MailInfo, StaffAccess;
 
     public function index(Request $request)
@@ -484,13 +485,23 @@ class ReturnController extends Controller
     public function store(Request $request)
     {
         $data = $request->except('document');
+        // Jaring pengaman: angka bisa datang dalam format tampilan "50.000,00".
+        // Tanpa ini (float)"50.000,00" dibaca PHP sebagai 50 -> total mengecil 1000x.
+        $data = $this->normalizeMoneyInput($data);
         $data['reference_no'] = 'rr-' . date("Ymd") . '-'. date("his");
         $data['user_id'] = Auth::id();
         $lims_sale_data = Sale::select('id', 'warehouse_id', 'customer_id', 'biller_id', 'currency_id', 'exchange_rate', 'sale_status')->find($data['sale_id']);
         $data['user_id'] = Auth::id();
         $data['customer_id'] = $lims_sale_data->customer_id;
         $data['warehouse_id'] = $lims_sale_data->warehouse_id;
-        $data['biller_id'] = $lims_sale_data->biller_id;
+        // Penjualan lama bisa punya biller_id NULL (user kasir belum di-set billernya).
+        // Kolom returns.biller_id NOT NULL, jadi siapkan fallback berlapis.
+        $data['biller_id'] = $lims_sale_data->biller_id
+            ?: (Auth::user()->biller_id
+                ?: (optional(\App\Models\PosSetting::first())->biller_id
+                    ?: Biller::orderBy('id')->value('id')));
+        if(!$data['biller_id'])
+            return redirect()->back()->with('message', 'Biller belum tersedia. Tambahkan minimal 1 biller sebelum melakukan retur penjualan.');
         $data['currency_id'] = $lims_sale_data->currency_id;
         $data['exchange_rate'] = $lims_sale_data->exchange_rate;
         $cash_register_data = CashRegister::where([
@@ -806,6 +817,9 @@ class ReturnController extends Controller
     public function update(Request $request, $id)
     {
         $data = $request->except('document');
+        // Jaring pengaman: angka bisa datang dalam format tampilan "50.000,00".
+        // Tanpa ini (float)"50.000,00" dibaca PHP sebagai 50 -> total mengecil 1000x.
+        $data = $this->normalizeMoneyInput($data);
         //return dd($data);
         $document = $request->document;
         $lims_return_data = Returns::find($id);

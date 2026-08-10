@@ -35,6 +35,7 @@ use App\Models\ProductReturn;
 use App\Models\Expense;
 use App\Models\ProductPurchase;
 use App\Models\ProductBatch;
+use App\Models\ProductUnit;
 use App\Models\Purchase;
 use App\Models\RewardPointSetting;
 use App\Models\CustomField;
@@ -74,6 +75,7 @@ use App\Services\JournalService;
 
 class SaleController extends Controller
 {
+    use \App\Traits\MoneyInput;
     use \App\Traits\TenantInfo;
     use \App\Traits\MailInfo;
 
@@ -82,6 +84,64 @@ class SaleController extends Controller
     public function __construct(ISmsModel $smsModel)
     {
         $this->_smsModel = $smsModel;
+    }
+
+    private function productWarehouseRow($productId, $warehouseId, $variantId = null, $productBatchId = null)
+    {
+        $query = Product_Warehouse::where([
+            ['product_id', $productId],
+            ['warehouse_id', $warehouseId],
+        ]);
+
+        if ($variantId) {
+            $query->where('variant_id', $variantId);
+        }
+        else {
+            $query->whereNull('variant_id');
+        }
+
+        if ($productBatchId) {
+            $query->where('product_batch_id', $productBatchId);
+        }
+
+        $row = $query->first();
+        if ($row) {
+            return $row;
+        }
+
+        return Product_Warehouse::create([
+            'product_id' => $productId,
+            'warehouse_id' => $warehouseId,
+            'variant_id' => $variantId,
+            'product_batch_id' => $productBatchId,
+            'qty' => 0,
+        ]);
+    }
+
+    private function tierPriceForQty($productId, $qty, $unitId = null)
+    {
+        $productUnitQuery = ProductUnit::where('product_id', $productId);
+        if ($unitId) {
+            $productUnitQuery->where('unit_id', $unitId);
+        }
+        $productUnit = $productUnitQuery->with('priceTiers')->first();
+        if (!$productUnit) {
+            return null;
+        }
+
+        $qty = (float) $qty;
+        $matchedTier = $productUnit->priceTiers
+            ->filter(function ($tier) use ($qty) {
+                return (float) $tier->min_qty > 0 && $qty >= (float) $tier->min_qty && (float) $tier->price > 0;
+            })
+            ->sortByDesc('min_qty')
+            ->first();
+
+        if ($matchedTier) {
+            return (float) $matchedTier->price;
+        }
+
+        return (float) $productUnit->price > 0 ? (float) $productUnit->price : null;
     }
 
     public function index(Request $request)
@@ -151,11 +211,20 @@ class SaleController extends Controller
 
     public function saleData(Request $request)
     {
+        // Column indices must match resources/views/backend/sale/index.blade.php's
+        // <thead> order (0 = checkbox, 1 = date, 2 = reference, 3 = Biller,
+        // 4 = customer, 5 = Sale Status, 6 = Payment Status, 7 = Delivery
+        // Status, 8 = grand total, 9 = Returned Amount, 10 = Paid, 11 = Due).
+        // A "Delivery Status" column was added at index 7 without updating
+        // this map, so sorting by grand total/paid used the wrong column
+        // (or an unmapped one, e.g. "Paid"/"Due", crashed with an invalid
+        // SQL column). Fixed to match current positions, with a safe
+        // fallback below for any index still not covered here.
         $columns = array(
             1 => 'created_at',
             2 => 'reference_no',
-            7 => 'grand_total',
-            8 => 'paid_amount',
+            8 => 'grand_total',
+            10 => 'paid_amount',
         );
 
         $warehouse_id = $request->input('warehouse_id');
@@ -184,7 +253,7 @@ class SaleController extends Controller
         else
             $limit = $totalData;
         $start = $request->input('start');
-        $order = 'sales.'.$columns[$request->input('order.0.column')];
+        $order = 'sales.' . ($columns[$request->input('order.0.column')] ?? 'created_at');
         $dir = $request->input('order.0.dir');
         //fetching custom fields data
         $custom_fields = CustomField::where([
@@ -307,8 +376,14 @@ class SaleController extends Controller
                 $nestedData['date'] = date(config('date_format').' h:i:s', strtotime($sale->created_at));
                 //$nestedData['date'] = $sale->created_at;
                 $nestedData['reference_no'] = $sale->reference_no;
-                $nestedData['biller'] = $sale->biller->name;
-                $nestedData['customer'] = $sale->customer->name.'<br>'.$sale->customer->phone_number.'<input type="hidden" class="deposit" value="'.($sale->customer->deposit - $sale->customer->expense).'" />'.'<input type="hidden" class="points" value="'.$sale->customer->points.'" />';
+                // Guard: kalau biller/customer sudah dihapus tapi transaksi lama
+                // masih mereferensikan id-nya, ->name di objek null akan bikin
+                // seluruh request sale-data gagal (500) dan DataTables cuma
+                // menampilkan "Ajax error" tanpa detail.
+                $nestedData['biller'] = $sale->biller ? $sale->biller->name : 'N/A';
+                $nestedData['customer'] = $sale->customer
+                    ? ($sale->customer->name.'<br>'.$sale->customer->phone_number.'<input type="hidden" class="deposit" value="'.($sale->customer->deposit - $sale->customer->expense).'" />'.'<input type="hidden" class="points" value="'.$sale->customer->points.'" />')
+                    : 'N/A';
 
                 if($sale->sale_status == 1){
                     $nestedData['sale_status'] = '<div class="badge badge-success">'.trans('file.Completed').'</div>';
@@ -421,7 +496,11 @@ class SaleController extends Controller
                 else
                     $currency_code = 'N/A';
 
-                $nestedData['sale'] = array( '[ "'.date(config('date_format'), strtotime($sale->created_at->toDateString())).'"', ' "'.$sale->reference_no.'"', ' "'.$sale_status.'"', ' "'.$sale->biller->name.'"', ' "'.$sale->biller->company_name.'"', ' "'.$sale->biller->email.'"', ' "'.$sale->biller->phone_number.'"', ' "'.$sale->biller->address.'"', ' "'.$sale->biller->city.'"', ' "'.$sale->customer->name.'"', ' "'.$sale->customer->phone_number.'"', ' "'.$sale->customer->address.'"', ' "'.$sale->customer->city.'"', ' "'.$sale->id.'"', ' "'.$sale->total_tax.'"', ' "'.$sale->total_discount.'"', ' "'.$sale->total_price.'"', ' "'.$sale->order_tax.'"', ' "'.$sale->order_tax_rate.'"', ' "'.$sale->order_discount.'"', ' "'.$sale->shipping_cost.'"', ' "'.$sale->grand_total.'"', ' "'.$sale->paid_amount.'"', ' "'.preg_replace('/[\n\r]/', "<br>", $sale->sale_note).'"', ' "'.preg_replace('/[\n\r]/', "<br>", $sale->staff_note).'"', ' "'.$sale->user->name.'"', ' "'.$sale->user->email.'"', ' "'.$sale->warehouse->name.'"', ' "'.$coupon_code.'"', ' "'.$sale->coupon_discount.'"', ' "'.$sale->document.'"', ' "'.$currency_code.'"', ' "'.$sale->exchange_rate.'"]'
+                // Guard: baris ini pernah crash total request sale-data (500,
+                // ajax error di DataTables) kalau biller/customer/user/warehouse
+                // dari transaksi lama sudah terhapus. Pakai nullsafe operator
+                // (?->) supaya field yang hilang jadi kosong, bukan fatal error.
+                $nestedData['sale'] = array( '[ "'.date(config('date_format'), strtotime($sale->created_at->toDateString())).'"', ' "'.$sale->reference_no.'"', ' "'.$sale_status.'"', ' "'.$sale->biller?->name.'"', ' "'.$sale->biller?->company_name.'"', ' "'.$sale->biller?->email.'"', ' "'.$sale->biller?->phone_number.'"', ' "'.$sale->biller?->address.'"', ' "'.$sale->biller?->city.'"', ' "'.$sale->customer?->name.'"', ' "'.$sale->customer?->phone_number.'"', ' "'.$sale->customer?->address.'"', ' "'.$sale->customer?->city.'"', ' "'.$sale->id.'"', ' "'.$sale->total_tax.'"', ' "'.$sale->total_discount.'"', ' "'.$sale->total_price.'"', ' "'.$sale->order_tax.'"', ' "'.$sale->order_tax_rate.'"', ' "'.$sale->order_discount.'"', ' "'.$sale->shipping_cost.'"', ' "'.$sale->grand_total.'"', ' "'.$sale->paid_amount.'"', ' "'.preg_replace('/[\n\r]/', "<br>", $sale->sale_note).'"', ' "'.preg_replace('/[\n\r]/', "<br>", $sale->staff_note).'"', ' "'.$sale->user?->name.'"', ' "'.$sale->user?->email.'"', ' "'.$sale->warehouse?->name.'"', ' "'.$coupon_code.'"', ' "'.$sale->coupon_discount.'"', ' "'.$sale->document.'"', ' "'.$currency_code.'"', ' "'.$sale->exchange_rate.'"]'
                 );
                 $data[] = $nestedData;
             }
@@ -440,18 +519,15 @@ class SaleController extends Controller
         $role = Role::find(Auth::user()->role_id);
         if($role->hasPermissionTo('sales-add')) {
             $lims_customer_list = Customer::where('is_active', true)->get();
+            // Penjualan hanya dari gudang tipe "toko"; kasir dikunci ke gudang miliknya.
+            $lims_warehouse_list = Warehouse::sellableList();
             if(Auth::user()->role_id > 2) {
-                $lims_warehouse_list = Warehouse::where([
-                    ['is_active', true],
-                    ['id', Auth::user()->warehouse_id]
-                ])->get();
                 $lims_biller_list = Biller::where([
                     ['is_active', true],
                     ['id', Auth::user()->biller_id]
                 ])->get();
             }
             else {
-                $lims_warehouse_list = Warehouse::where('is_active', true)->get();
                 $lims_biller_list = Biller::where('is_active', true)->get();
             }
 
@@ -476,6 +552,9 @@ class SaleController extends Controller
     public function store(Request $request)
     {
         $data = $request->all();
+        // Jaring pengaman: angka bisa datang dalam format tampilan "50.000,00".
+        // Tanpa ini (float)"50.000,00" dibaca PHP sebagai 50 -> total mengecil 1000x.
+        $data = $this->normalizeMoneyInput($data);
         //return $data;
         /*DB::beginTransaction();
         try {*/
@@ -488,6 +567,32 @@ class SaleController extends Controller
             }
 
             $data['user_id'] = Auth::id();
+
+            // Kasir dikunci ke gudang yang ditetapkan admin; siapa pun hanya boleh
+            // menjual dari gudang bertipe "toko".
+            if(Auth::user()->role_id > 2 && Auth::user()->warehouse_id)
+                $data['warehouse_id'] = Auth::user()->warehouse_id;
+
+            if(!Warehouse::isSellable($data['warehouse_id'] ?? null)) {
+                $message = 'Penjualan hanya bisa dilakukan dari gudang bertipe Toko.';
+                if(!empty($data['pos']))
+                    return response()->json(['error' => $message], 422);
+                return redirect()->back()->with('not_permitted', $message);
+            }
+
+            // Biller harus valid: transaksi dengan biller_id kosong / menunjuk
+            // baris yang sudah dihapus bikin struk dan retur error
+            // ("Attempt to read property ... on null"). Kalau belum ada biller
+            // sama sekali, dibuatkan otomatis dari Pengaturan Umum -- kasir
+            // tidak diblokir berjualan gara-gara data master yang belum diisi.
+            if(empty($data['biller_id']) || !Biller::where('id', $data['biller_id'])->exists()) {
+                try {
+                    $data['biller_id'] = Biller::defaultForTransaction()->id;
+                } catch (\Throwable $e) {
+                    \Log::error('Gagal menyiapkan biller default: ' . $e->getMessage());
+                }
+            }
+
             $cash_register_data = CashRegister::where([
                 ['user_id', $data['user_id']],
                 ['warehouse_id', $data['warehouse_id']],
@@ -506,6 +611,10 @@ class SaleController extends Controller
                 if(!isset($data['reference_no']))
                     $data['reference_no'] = 'posr-' . date("Ymd") . '-'. date("his");
 
+                if(($data['paid_by_id'] ?? null) == 8) {
+                    $data['paid_amount'] = 0;
+                    $data['paying_amount'] = 0;
+                }
                 $balance = $data['grand_total'] - $data['paid_amount'];
                 if($balance > 0 || $balance < 0)
                     $data['payment_status'] = 2;
@@ -637,20 +746,13 @@ class SaleController extends Controller
                                 ['variant_id', $variant_list[$key]]
                             ])->first();
 
-                            $child_warehouse_data = Product_Warehouse::where([
-                                ['product_id', $child_id],
-                                ['variant_id', $variant_list[$key]],
-                                ['warehouse_id', $data['warehouse_id'] ],
-                            ])->first();
+                            $child_warehouse_data = $this->productWarehouseRow($child_id, $data['warehouse_id'], $variant_list[$key]);
 
                             $child_product_variant_data->qty -= $qty[$i] * $qty_list[$key];
                             $child_product_variant_data->save();
                         }
                         else {
-                            $child_warehouse_data = Product_Warehouse::where([
-                                ['product_id', $child_id],
-                                ['warehouse_id', $data['warehouse_id'] ],
-                            ])->first();
+                            $child_warehouse_data = $this->productWarehouseRow($child_id, $data['warehouse_id']);
                         }
 
                         $child_data->qty -= $qty[$i] * $qty_list[$key];
@@ -686,20 +788,17 @@ class SaleController extends Controller
                         if($lims_product_data->is_variant) {
                             $lims_product_variant_data->qty -= $quantity;
                             $lims_product_variant_data->save();
-                            $lims_product_warehouse_data = Product_Warehouse::FindProductWithVariant($id, $lims_product_variant_data->variant_id, $data['warehouse_id'])->first();
+                            $lims_product_warehouse_data = $this->productWarehouseRow($id, $data['warehouse_id'], $lims_product_variant_data->variant_id);
                         }
                         elseif($product_batch_id[$i]) {
-                            $lims_product_warehouse_data = Product_Warehouse::where([
-                                ['product_batch_id', $product_batch_id[$i] ],
-                                ['warehouse_id', $data['warehouse_id'] ]
-                            ])->first();
+                            $lims_product_warehouse_data = $this->productWarehouseRow($id, $data['warehouse_id'], null, $product_batch_id[$i]);
                             $lims_product_batch_data = ProductBatch::find($product_batch_id[$i]);
                             //deduct product batch quantity
                             $lims_product_batch_data->qty -= $quantity;
                             $lims_product_batch_data->save();
                         }
                         else {
-                            $lims_product_warehouse_data = Product_Warehouse::FindProductWithoutVariant($id, $data['warehouse_id'])->first();
+                            $lims_product_warehouse_data = $this->productWarehouseRow($id, $data['warehouse_id']);
                         }
                         //deduct quantity from warehouse
                         $lims_product_warehouse_data->qty -= $quantity;
@@ -766,8 +865,8 @@ class SaleController extends Controller
                 }
             }
 
-            //auto-post journal: recognize sale revenue (Dr Piutang Usaha, Cr Penjualan) and COGS (Dr HPP, Cr Persediaan)
-            if($data['sale_status'] != 3) {
+            // Jurnal penjualan POS diposting saat setoran cash register di-approve admin keuangan.
+            if(false && $data['sale_status'] != 3) {
                 try {
                     $piutang_id = JournalService::accountIdByCode(JournalService::PIUTANG_USAHA);
                     $penjualan_id = JournalService::accountIdByCode(JournalService::PENJUALAN);
@@ -804,6 +903,8 @@ class SaleController extends Controller
                     $paying_method = 'Points';
                     $lims_payment_data->used_points = $data['used_points'];
                 }
+                elseif($data['paid_by_id'] == 8)
+                    $paying_method = 'Kredit / Piutang';
 
                 if($cash_register_data)
                     $lims_payment_data->cash_register_id = $cash_register_data->id;
@@ -819,8 +920,11 @@ class SaleController extends Controller
                 $lims_payment_data->payment_receiver = $data['payment_receiver'];
                 $lims_payment_data->save();
 
-                //auto-post journal: receive payment against the sale (Dr Kas/Titipan Pelanggan, Cr Piutang Usaha)
+                // Jurnal pembayaran penjualan POS diposting saat setoran cash register di-approve admin keuangan.
                 try {
+                    if($lims_payment_data->cash_register_id) {
+                        throw new \Exception('POS sale payment waits for cash register approval.');
+                    }
                     $piutang_id = JournalService::accountIdByCode(JournalService::PIUTANG_USAHA);
                     if($paying_method == 'Deposit')
                         $debit_id = JournalService::accountIdByCode(JournalService::TITIPAN_PELANGGAN);
@@ -961,7 +1065,9 @@ class SaleController extends Controller
         if($lims_sale_data->sale_status == '1')
             return redirect('sales/gen_invoice/' . $lims_sale_data->id)->with('message', $message);
         elseif($data['pos'])
-            return redirect('pos')->with('message', $message);
+            // pos_url dikirim POS Simple supaya draft/void kembali ke halamannya
+            // sendiri; kalau kosong perilakunya tetap seperti semula (POS lama).
+            return redirect(!empty($data['pos_url']) ? $data['pos_url'] : 'pos')->with('message', $message);
         else
             return redirect('sales')->with('message', $message);
     }
@@ -1313,9 +1419,8 @@ class SaleController extends Controller
             $lims_customer_group_all = Cache::remember('customer_group_list', 60*60*24, function () {
                 return CustomerGroup::where('is_active', true)->get();
             });
-            $lims_warehouse_list = Cache::remember('warehouse_list', 60*60*24*365, function () {
-                return Warehouse::where('is_active', true)->get();
-            });
+            // Jangan di-cache global: daftarnya bergantung pada role & gudang user.
+            $lims_warehouse_list = Warehouse::sellableList();
             $lims_biller_list = Cache::remember('biller_list', 60*60*24*30, function () {
                 return Biller::where('is_active', true)->get();
             });
@@ -1587,6 +1692,13 @@ class SaleController extends Controller
         else
             $product[] = $lims_product_data->code;
 
+        if ($lims_product_data->price_mode == 'qty') {
+            $tier_price = $this->tierPriceForQty($lims_product_data->id, $qty, $lims_product_data->sale_unit_id);
+            if ($tier_price !== null) {
+                $lims_product_data->price = $tier_price;
+            }
+        }
+
         $no_discount = 1;
         foreach ($all_discount as $key => $discount) {
             $product_list = explode(",", $discount->product_list);
@@ -1674,7 +1786,21 @@ class SaleController extends Controller
     {
         $qty = $request->input('qty');
         $customer_id = $request->input('customer_id');
-        $lims_product_data = Product::select('id', 'price', 'promotion', 'promotion_price', 'last_date')->find($request->input('product_id'));
+        $lims_product_data = Product::select('id', 'price', 'price_mode', 'promotion', 'promotion_price', 'last_date', 'sale_unit_id')->find($request->input('product_id'));
+        $unit_id = $request->input('sale_unit_id');
+        if (!$unit_id && $request->input('sale_unit')) {
+            $unit = Unit::where('unit_name', $request->input('sale_unit'))->first();
+            $unit_id = $unit ? $unit->id : null;
+        }
+        if (!$unit_id) {
+            $unit_id = $lims_product_data->sale_unit_id;
+        }
+        if ($lims_product_data && $lims_product_data->price_mode == 'qty') {
+            $tier_price = $this->tierPriceForQty($lims_product_data->id, $qty, $unit_id);
+            if ($tier_price !== null) {
+                $lims_product_data->price = $tier_price;
+            }
+        }
         $todayDate = date('Y-m-d');
         $all_discount = DB::table('discount_plan_customers')
                         ->join('discount_plans', 'discount_plans.id', '=', 'discount_plan_customers.discount_plan_id')
@@ -1776,7 +1902,7 @@ class SaleController extends Controller
         $role = Role::find(Auth::user()->role_id);
         if($role->hasPermissionTo('sales-add')){
             $lims_customer_list = Customer::where('is_active', true)->get();
-            $lims_warehouse_list = Warehouse::where('is_active', true)->get();
+            $lims_warehouse_list = Warehouse::sellableList();
             $lims_biller_list = Biller::where('is_active', true)->get();
             $lims_tax_list = Tax::where('is_active', true)->get();
             $numberOfInvoice = Sale::count();
@@ -1880,10 +2006,7 @@ class SaleController extends Controller
                 else
                     $quantity = $qty[$key];
                 $product['qty'] -= $quantity;
-                $product_warehouse = Product_Warehouse::where([
-                    ['product_id', $product['id']],
-                    ['warehouse_id', $data['warehouse_id']]
-                ])->first();
+                $product_warehouse = $this->productWarehouseRow($product['id'], $data['warehouse_id']);
                 $product_warehouse->qty -= $quantity;
                 $product->save();
                 $product_warehouse->save();
@@ -1973,6 +2096,9 @@ class SaleController extends Controller
     public function update(Request $request, $id)
     {
         $data = $request->except('document');
+        // Jaring pengaman: angka bisa datang dalam format tampilan "50.000,00".
+        // Tanpa ini (float)"50.000,00" dibaca PHP sebagai 50 -> total mengecil 1000x.
+        $data = $this->normalizeMoneyInput($data);
         //return dd($data);
         $document = $request->document;
         $lims_sale_data = Sale::find($id);
@@ -2047,20 +2173,13 @@ class SaleController extends Controller
                             ['variant_id', $variant_list[$index]]
                         ])->first();
 
-                        $child_warehouse_data = Product_Warehouse::where([
-                            ['product_id', $child_id],
-                            ['variant_id', $variant_list[$index]],
-                            ['warehouse_id', $lims_sale_data->warehouse_id ],
-                        ])->first();
+                        $child_warehouse_data = $this->productWarehouseRow($child_id, $lims_sale_data->warehouse_id, $variant_list[$index]);
 
                         $child_product_variant_data->qty += $product_sale_data->qty * $qty_list[$index];
                         $child_product_variant_data->save();
                     }
                     else {
-                        $child_warehouse_data = Product_Warehouse::where([
-                            ['product_id', $child_id],
-                            ['warehouse_id', $lims_sale_data->warehouse_id ],
-                        ])->first();
+                        $child_warehouse_data = $this->productWarehouseRow($child_id, $lims_sale_data->warehouse_id);
                     }
 
                     $child_data->qty += $product_sale_data->qty * $qty_list[$index];
@@ -2079,26 +2198,20 @@ class SaleController extends Controller
                     $old_product_qty = $old_product_qty / $lims_sale_unit_data->operation_value;
                 if($product_sale_data->variant_id) {
                     $lims_product_variant_data = ProductVariant::select('id', 'qty')->FindExactProduct($product_sale_data->product_id, $product_sale_data->variant_id)->first();
-                    $lims_product_warehouse_data = Product_Warehouse::FindProductWithVariant($product_sale_data->product_id, $product_sale_data->variant_id, $lims_sale_data->warehouse_id)
-                    ->first();
+                    $lims_product_warehouse_data = $this->productWarehouseRow($product_sale_data->product_id, $lims_sale_data->warehouse_id, $product_sale_data->variant_id);
                     $old_product_variant_id[$key] = $lims_product_variant_data->id;
                     $lims_product_variant_data->qty += $old_product_qty;
                     $lims_product_variant_data->save();
                 }
                 elseif($product_sale_data->product_batch_id) {
-                    $lims_product_warehouse_data = Product_Warehouse::where([
-                        ['product_id', $product_sale_data->product_id],
-                        ['product_batch_id', $product_sale_data->product_batch_id],
-                        ['warehouse_id', $lims_sale_data->warehouse_id]
-                    ])->first();
+                    $lims_product_warehouse_data = $this->productWarehouseRow($product_sale_data->product_id, $lims_sale_data->warehouse_id, null, $product_sale_data->product_batch_id);
 
                     $product_batch_data = ProductBatch::find($product_sale_data->product_batch_id);
                     $product_batch_data->qty += $old_product_qty;
                     $product_batch_data->save();
                 }
                 else
-                    $lims_product_warehouse_data = Product_Warehouse::FindProductWithoutVariant($product_sale_data->product_id, $lims_sale_data->warehouse_id)
-                    ->first();
+                    $lims_product_warehouse_data = $this->productWarehouseRow($product_sale_data->product_id, $lims_sale_data->warehouse_id);
                 $lims_product_data->qty += $old_product_qty;
                 $lims_product_warehouse_data->qty += $old_product_qty;
                 $lims_product_data->save();
@@ -2139,20 +2252,13 @@ class SaleController extends Controller
                             ['variant_id', $variant_list[$index] ],
                         ])->first();
 
-                        $child_warehouse_data = Product_Warehouse::where([
-                            ['product_id', $child_id],
-                            ['variant_id', $variant_list[$index] ],
-                            ['warehouse_id', $data['warehouse_id'] ],
-                        ])->first();
+                        $child_warehouse_data = $this->productWarehouseRow($child_id, $data['warehouse_id'], $variant_list[$index]);
 
                         $child_product_variant_data->qty -= $qty[$key] * $qty_list[$index];
                         $child_product_variant_data->save();
                     }
                     else {
-                        $child_warehouse_data = Product_Warehouse::where([
-                            ['product_id', $child_id],
-                            ['warehouse_id', $data['warehouse_id'] ],
-                        ])->first();
+                        $child_warehouse_data = $this->productWarehouseRow($child_id, $data['warehouse_id']);
                     }
 
 
@@ -2175,27 +2281,21 @@ class SaleController extends Controller
                     }
                     if($lims_product_data->is_variant) {
                         $lims_product_variant_data = ProductVariant::select('id', 'variant_id', 'qty')->FindExactProductWithCode($pro_id, $product_code[$key])->first();
-                        $lims_product_warehouse_data = Product_Warehouse::FindProductWithVariant($pro_id, $lims_product_variant_data->variant_id, $data['warehouse_id'])
-                        ->first();
+                        $lims_product_warehouse_data = $this->productWarehouseRow($pro_id, $data['warehouse_id'], $lims_product_variant_data->variant_id);
 
                         $product_sale['variant_id'] = $lims_product_variant_data->variant_id;
                         $lims_product_variant_data->qty -= $new_product_qty;
                         $lims_product_variant_data->save();
                     }
                     elseif($product_batch_id[$key]) {
-                        $lims_product_warehouse_data = Product_Warehouse::where([
-                            ['product_id', $pro_id],
-                            ['product_batch_id', $product_batch_id[$key] ],
-                            ['warehouse_id', $data['warehouse_id'] ]
-                        ])->first();
+                        $lims_product_warehouse_data = $this->productWarehouseRow($pro_id, $data['warehouse_id'], null, $product_batch_id[$key]);
 
                         $product_batch_data = ProductBatch::find($product_batch_id[$key]);
                         $product_batch_data->qty -= $new_product_qty;
                         $product_batch_data->save();
                     }
                     else {
-                        $lims_product_warehouse_data = Product_Warehouse::FindProductWithoutVariant($pro_id, $data['warehouse_id'])
-                        ->first();
+                        $lims_product_warehouse_data = $this->productWarehouseRow($pro_id, $data['warehouse_id']);
                     }
                     $lims_product_data->qty -= $new_product_qty;
                     $lims_product_warehouse_data->qty -= $new_product_qty;
@@ -2266,22 +2366,10 @@ class SaleController extends Controller
         }
         $lims_sale_data->update($data);
 
-        // Jurnal otomatis: edit sale (ubah item/harga) bisa mengubah grand_total
-        // dan HPP, jadi jurnal 'sale' & 'sale_cogs' lama dihapus lalu diposting
-        // ulang dengan angka terbaru - sama seperti alur di store().
+        // Jurnal penjualan POS diposting saat setoran cash register di-approve admin keuangan.
         try {
             JournalService::reverseForReference('sale', $lims_sale_data->id);
             JournalService::reverseForReference('sale_cogs', $lims_sale_data->id);
-            $piutang_id = JournalService::accountIdByCode(JournalService::PIUTANG_USAHA);
-            $penjualan_id = JournalService::accountIdByCode(JournalService::PENJUALAN);
-            JournalService::postSimple($lims_sale_data->created_at, 'Penjualan ' . $lims_sale_data->reference_no, $piutang_id, $penjualan_id, $lims_sale_data->grand_total, 'sale', $lims_sale_data->id);
-
-            $cogs_amount = JournalService::saleCogsAmount($lims_sale_data->id);
-            if ($cogs_amount > 0) {
-                $hpp_id = JournalService::accountIdByCode(JournalService::HPP);
-                $persediaan_id = JournalService::accountIdByCode(JournalService::PERSEDIAAN);
-                JournalService::postSimple($lims_sale_data->created_at, 'HPP Penjualan ' . $lims_sale_data->reference_no, $hpp_id, $persediaan_id, $cogs_amount, 'sale_cogs', $lims_sale_data->id);
-            }
         } catch (\Exception $e) {
             // Jangan sampai kegagalan posting jurnal membatalkan update sale itu sendiri.
         }
@@ -2337,29 +2425,39 @@ class SaleController extends Controller
     public function genInvoice($id)
     {
         $lims_sale_data = Sale::find($id);
+        if(!$lims_sale_data)
+            return redirect()->back()->with('not_permitted', 'Transaksi tidak ditemukan');
         $lims_product_sale_data = Product_Sale::where('sale_id', $id)->get();
-        if(cache()->has('biller_list'))
-        {
-            $lims_biller_data = cache()->get('biller_list')->find($lims_sale_data->biller_id);
-        }
-        else{
-            $lims_biller_data = Biller::find($lims_sale_data->biller_id);
-        }
-        if(cache()->has('warehouse_list'))
-        {
-            $lims_warehouse_data = cache()->get('warehouse_list')->find($lims_sale_data->warehouse_id);
-        }
-        else{
-            $lims_warehouse_data = Warehouse::find($lims_sale_data->warehouse_id);
-        }
 
-        if(cache()->has('customer_list'))
-        {
-            $lims_customer_data = cache()->get('customer_list')->find($lims_sale_data->customer_id);
-        }
-        else{
+        // Cache 'biller_list'/'warehouse_list'/'customer_list' hanya berisi baris
+        // yang aktif dan berumur sampai 30 hari. Kalau biller transaksinya tidak
+        // ada di cache (baru dibuat, dinonaktifkan, atau biller_id null), find()
+        // mengembalikan null dan struk mati dengan
+        // "Attempt to read property company_name on null".
+        // Jadi: cache -> DB langsung -> baris pertama yang ada.
+        $lims_biller_data = cache()->has('biller_list')
+            ? cache()->get('biller_list')->find($lims_sale_data->biller_id)
+            : null;
+        if(!$lims_biller_data)
+            $lims_biller_data = Biller::find($lims_sale_data->biller_id);
+        if(!$lims_biller_data)
+            $lims_biller_data = Biller::defaultForTransaction();
+
+        $lims_warehouse_data = cache()->has('warehouse_list')
+            ? cache()->get('warehouse_list')->find($lims_sale_data->warehouse_id)
+            : null;
+        if(!$lims_warehouse_data)
+            $lims_warehouse_data = Warehouse::find($lims_sale_data->warehouse_id);
+        if(!$lims_warehouse_data)
+            $lims_warehouse_data = new Warehouse();
+
+        $lims_customer_data = cache()->has('customer_list')
+            ? cache()->get('customer_list')->find($lims_sale_data->customer_id)
+            : null;
+        if(!$lims_customer_data)
             $lims_customer_data = Customer::find($lims_sale_data->customer_id);
-        }
+        if(!$lims_customer_data)
+            $lims_customer_data = new Customer();
 
         $lims_payment_data = Payment::where('sale_id', $id)->get();
         if(cache()->has('pos_setting'))
@@ -2368,6 +2466,13 @@ class SaleController extends Controller
         }
         else{
             $lims_pos_setting_data = PosSetting::select('invoice_option')->latest()->first();
+        }
+        // Guard: if no pos_settings row exists yet (or the cached value is
+        // empty), invoice_option below would be read off null and crash the
+        // whole invoice page with an uncaught error instead of showing it.
+        if(!$lims_pos_setting_data) {
+            $lims_pos_setting_data = new PosSetting();
+            $lims_pos_setting_data->invoice_option = 'thermal';
         }
 
         $supportedIdentifiers = [
@@ -2449,6 +2554,14 @@ class SaleController extends Controller
     public function addPayment(Request $request)
     {
         $data = $request->all();
+        /**
+         * Modal "Tambah Pembayaran" merender angka dengan format Indonesia
+         * ("36.000,00"). Tanpa normalisasi, (float)"36.000,00" di PHP = 36,
+         * jadi pembayaran piutang 36.000 tercatat hanya 36.
+         */
+        $data['amount'] = self::normalizeMoney($data['amount'] ?? 0);
+        $data['paying_amount'] = self::normalizeMoney($data['paying_amount'] ?? 0);
+        $data['balance'] = self::normalizeMoney($data['balance'] ?? 0);
         if(!$data['amount'])
             $data['amount'] = 0.00;
 
@@ -2499,8 +2612,11 @@ class SaleController extends Controller
         $lims_payment_data->save();
         $lims_sale_data->save();
 
-        //auto-post journal: receive payment against the sale (Dr Kas/Titipan Pelanggan, Cr Piutang Usaha)
+        // Jurnal pembayaran POS diposting saat setoran cash register di-approve admin keuangan.
         try {
+            if($lims_payment_data->cash_register_id) {
+                throw new \Exception('POS sale payment waits for cash register approval.');
+            }
             $piutang_id = JournalService::accountIdByCode(JournalService::PIUTANG_USAHA);
             if($paying_method == 'Deposit')
                 $debit_id = JournalService::accountIdByCode(JournalService::TITIPAN_PELANGGAN);
@@ -2681,7 +2797,9 @@ class SaleController extends Controller
     public function updatePayment(Request $request)
     {
         $data = $request->all();
-        //return $data;
+        // Lihat catatan di addPayment(): angka datang dalam format "36.000,00".
+        $data['edit_amount'] = self::normalizeMoney($data['edit_amount'] ?? 0);
+        $data['edit_paying_amount'] = self::normalizeMoney($data['edit_paying_amount'] ?? 0);
         $lims_payment_data = Payment::find($data['payment_id']);
         $lims_sale_data = Sale::find($lims_payment_data->sale_id);
         $lims_customer_data = Customer::find($lims_sale_data->customer_id);
@@ -2830,6 +2948,9 @@ class SaleController extends Controller
             // without this the payment update would never be reflected in
             // Buku Besar/Neraca for PayPal payments specifically.
             try {
+                if($lims_payment_data->cash_register_id) {
+                    throw new \Exception('POS sale payment waits for cash register approval.');
+                }
                 JournalService::reverseForReference('sale_payment', $lims_payment_data->id);
                 $piutang_id = JournalService::accountIdByCode(JournalService::PIUTANG_USAHA);
                 $debit_id = JournalService::coaIdForCashAccount($data['account_id'] ?? null);
@@ -2862,6 +2983,9 @@ class SaleController extends Controller
 
         //auto-post journal: reverse the old payment entry and repost with updated values
         try {
+            if($lims_payment_data->cash_register_id) {
+                throw new \Exception('POS sale payment waits for cash register approval.');
+            }
             JournalService::reverseForReference('sale_payment', $lims_payment_data->id);
             $piutang_id = JournalService::accountIdByCode(JournalService::PIUTANG_USAHA);
             if($lims_payment_data->paying_method == 'Deposit')
@@ -2956,6 +3080,10 @@ class SaleController extends Controller
 
     public function todaySale()
     {
+        // Kasir tidak boleh melihat rekap penjualan hari ini sebelum setoran diapprove.
+        if (Auth::user()->role_id > 2)
+            return [];
+
         $data['total_sale_amount'] = Sale::whereDate('created_at', date("Y-m-d"))->sum('grand_total');
         $data['total_payment'] = Payment::whereDate('created_at', date("Y-m-d"))->sum('amount');
         $data['cash_payment'] = Payment::where([
@@ -2984,6 +3112,9 @@ class SaleController extends Controller
 
     public function todayProfit($warehouse_id)
     {
+        if (Auth::user()->role_id > 2)
+            return [];
+
         if($warehouse_id == 0)
             $product_sale_data = Product_Sale::select(DB::raw('product_id, product_batch_id, sum(qty) as sold_qty, sum(total) as sold_amount'))->whereDate('created_at', date("Y-m-d"))->groupBy('product_id', 'product_batch_id')->get();
         else
@@ -3087,20 +3218,13 @@ class SaleController extends Controller
                                 ['variant_id', $variant_list[$index] ]
                             ])->first();
 
-                            $child_warehouse_data = Product_Warehouse::where([
-                                ['product_id', $child_id],
-                                ['variant_id', $variant_list[$index] ],
-                                ['warehouse_id', $lims_sale_data->warehouse_id ],
-                            ])->first();
+                            $child_warehouse_data = $this->productWarehouseRow($child_id, $lims_sale_data->warehouse_id, $variant_list[$index]);
 
                              $child_product_variant_data->qty += $product_sale->qty * $qty_list[$index];
                              $child_product_variant_data->save();
                         }
                         else {
-                            $child_warehouse_data = Product_Warehouse::where([
-                                ['product_id', $child_id],
-                                ['warehouse_id', $lims_sale_data->warehouse_id ],
-                            ])->first();
+                            $child_warehouse_data = $this->productWarehouseRow($child_id, $lims_sale_data->warehouse_id);
                         }
 
                         $child_data->qty += $product_sale->qty * $qty_list[$index];
@@ -3118,22 +3242,19 @@ class SaleController extends Controller
                         $product_sale->qty = $product_sale->qty / $lims_sale_unit_data->operation_value;
                     if($product_sale->variant_id) {
                         $lims_product_variant_data = ProductVariant::select('id', 'qty')->FindExactProduct($lims_product_data->id, $product_sale->variant_id)->first();
-                        $lims_product_warehouse_data = Product_Warehouse::FindProductWithVariant($lims_product_data->id, $product_sale->variant_id, $lims_sale_data->warehouse_id)->first();
+                        $lims_product_warehouse_data = $this->productWarehouseRow($lims_product_data->id, $lims_sale_data->warehouse_id, $product_sale->variant_id);
                         $lims_product_variant_data->qty += $product_sale->qty;
                         $lims_product_variant_data->save();
                     }
                     elseif($product_sale->product_batch_id) {
                         $lims_product_batch_data = ProductBatch::find($product_sale->product_batch_id);
-                        $lims_product_warehouse_data = Product_Warehouse::where([
-                            ['product_batch_id', $product_sale->product_batch_id],
-                            ['warehouse_id', $lims_sale_data->warehouse_id]
-                        ])->first();
+                        $lims_product_warehouse_data = $this->productWarehouseRow($lims_product_data->id, $lims_sale_data->warehouse_id, null, $product_sale->product_batch_id);
 
                         $lims_product_batch_data->qty -= $product_sale->qty;
                         $lims_product_batch_data->save();
                     }
                     else {
-                        $lims_product_warehouse_data = Product_Warehouse::FindProductWithoutVariant($lims_product_data->id, $lims_sale_data->warehouse_id)->first();
+                        $lims_product_warehouse_data = $this->productWarehouseRow($lims_product_data->id, $lims_sale_data->warehouse_id);
                     }
 
                     $lims_product_data->qty += $product_sale->qty;
@@ -3228,20 +3349,13 @@ class SaleController extends Controller
                             ['variant_id', $variant_list[$index] ]
                         ])->first();
 
-                        $child_warehouse_data = Product_Warehouse::where([
-                            ['product_id', $child_id],
-                            ['variant_id', $variant_list[$index] ],
-                            ['warehouse_id', $lims_sale_data->warehouse_id ],
-                        ])->first();
+                        $child_warehouse_data = $this->productWarehouseRow($child_id, $lims_sale_data->warehouse_id, $variant_list[$index]);
 
                          $child_product_variant_data->qty += $product_sale->qty * $qty_list[$index];
                          $child_product_variant_data->save();
                     }
                     else {
-                        $child_warehouse_data = Product_Warehouse::where([
-                            ['product_id', $child_id],
-                            ['warehouse_id', $lims_sale_data->warehouse_id ],
-                        ])->first();
+                        $child_warehouse_data = $this->productWarehouseRow($child_id, $lims_sale_data->warehouse_id);
                     }
 
                     $child_data->qty += $product_sale->qty * $qty_list[$index];
@@ -3259,22 +3373,19 @@ class SaleController extends Controller
                     $product_sale->qty = $product_sale->qty / $lims_sale_unit_data->operation_value;
                 if($product_sale->variant_id) {
                     $lims_product_variant_data = ProductVariant::select('id', 'qty')->FindExactProduct($lims_product_data->id, $product_sale->variant_id)->first();
-                    $lims_product_warehouse_data = Product_Warehouse::FindProductWithVariant($lims_product_data->id, $product_sale->variant_id, $lims_sale_data->warehouse_id)->first();
+                    $lims_product_warehouse_data = $this->productWarehouseRow($lims_product_data->id, $lims_sale_data->warehouse_id, $product_sale->variant_id);
                     $lims_product_variant_data->qty += $product_sale->qty;
                     $lims_product_variant_data->save();
                 }
                 elseif($product_sale->product_batch_id) {
                     $lims_product_batch_data = ProductBatch::find($product_sale->product_batch_id);
-                    $lims_product_warehouse_data = Product_Warehouse::where([
-                        ['product_batch_id', $product_sale->product_batch_id],
-                        ['warehouse_id', $lims_sale_data->warehouse_id]
-                    ])->first();
+                    $lims_product_warehouse_data = $this->productWarehouseRow($lims_product_data->id, $lims_sale_data->warehouse_id, null, $product_sale->product_batch_id);
 
                     $lims_product_batch_data->qty -= $product_sale->qty;
                     $lims_product_batch_data->save();
                 }
                 else {
-                    $lims_product_warehouse_data = Product_Warehouse::FindProductWithoutVariant($lims_product_data->id, $lims_sale_data->warehouse_id)->first();
+                    $lims_product_warehouse_data = $this->productWarehouseRow($lims_product_data->id, $lims_sale_data->warehouse_id);
                 }
 
                 $lims_product_data->qty += $product_sale->qty;

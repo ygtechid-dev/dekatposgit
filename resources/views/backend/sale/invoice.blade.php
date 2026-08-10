@@ -77,7 +77,10 @@
 <body>
 
 <div style="max-width:400px;margin:0 auto">
-    @if(preg_match('~[0-9]~', url()->previous()))
+    @if(strpos(url()->previous(), 'pos-simple') !== false)
+        {{-- transaksi datang dari halaman POS Simple: tombol Back kembali ke sana --}}
+        @php $url = url('pos-simple'); @endphp
+    @elseif(preg_match('~[0-9]~', url()->previous()))
         @php $url = '../../pos'; @endphp
     @else
         @php $url = url()->previous(); @endphp
@@ -256,7 +259,17 @@
 </div>
 
 <script type="text/javascript">
-    localStorage.clear();
+    /* Dulu di sini localStorage.clear(): ikut menghapus daftar transaksi VOID
+       POS Simple yang diparkir kasir. Bersihkan semuanya kecuali kunci itu. */
+    try {
+        var psKeep = ['pos_simple_void_v1'], psSaved = {};
+        for (var i = 0; i < psKeep.length; i++) {
+            var v = localStorage.getItem(psKeep[i]);
+            if (v !== null) psSaved[psKeep[i]] = v;
+        }
+        localStorage.clear();
+        for (var k in psSaved) localStorage.setItem(k, psSaved[k]);
+    } catch (e) { }
     function auto_print() {
         window.print();
     }

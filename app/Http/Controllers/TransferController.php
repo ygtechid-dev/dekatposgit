@@ -13,6 +13,7 @@ use App\Models\Transfer;
 use App\Models\ProductTransfer;
 use App\Models\ProductVariant;
 use App\Models\ProductBatch;
+use App\Services\JournalService;
 use Auth;
 use DB;
 use Illuminate\Support\Facades\Mail;
@@ -22,6 +23,68 @@ use Illuminate\Support\Facades\Validator;
 
 class TransferController extends Controller
 {
+    use \App\Traits\MoneyInput;
+    /**
+     * Transfer stok memindahkan nilai persediaan antar gudang, jadi harus
+     * tercermin di keuangan. Pola jurnalnya:
+     *
+     *   status 1 (Completed) : D Persediaan <tujuan>            K Persediaan <asal>
+     *   status 3 (Sent)      : D Persediaan Dalam Perjalanan    K Persediaan <asal>
+     *   status 2 (Pending)   : tidak ada jurnal (stok belum bergerak)
+     *
+     * Jurnal lama selalu di-reverse dulu supaya edit/hapus transfer tidak
+     * meninggalkan nilai ganda.
+     */
+    private function postTransferJournal($transferId)
+    {
+        JournalService::reverseForReference('transfer', $transferId);
+
+        $transfer = Transfer::find($transferId);
+        if(!$transfer || !in_array((int)$transfer->status, [1, 3], true))
+            return;
+
+        $amount = round((float)ProductTransfer::where('transfer_id', $transferId)->sum('total'), 2);
+        if($amount <= 0)
+            return;
+
+        $fromAccountId = JournalService::inventoryAccountIdForWarehouse($transfer->from_warehouse_id);
+        $toAccountId = (int)$transfer->status === 1
+            ? JournalService::inventoryAccountIdForWarehouse($transfer->to_warehouse_id)
+            : JournalService::inventoryInTransitAccountId();
+
+        if(!$fromAccountId || !$toAccountId || $fromAccountId == $toAccountId)
+            return;
+
+        $journalDate = $transfer->created_at
+            ? date('Y-m-d', strtotime($transfer->created_at))
+            : date('Y-m-d');
+        $description = 'Transfer Stok - ' . $transfer->reference_no;
+
+        JournalService::postSimple(
+            $journalDate,
+            $description,
+            $toAccountId,
+            $fromAccountId,
+            $amount,
+            'transfer',
+            $transferId,
+            $description
+        );
+    }
+
+    /**
+     * Bungkus posting jurnal supaya kegagalan akuntansi tidak menggagalkan
+     * transaksi stok yang sudah tersimpan, tapi tetap tercatat di log.
+     */
+    private function syncTransferJournal($transferId)
+    {
+        try {
+            $this->postTransferJournal($transferId);
+        } catch (\Throwable $e) {
+            \Log::error('Gagal posting jurnal transfer #' . $transferId . ': ' . $e->getMessage());
+        }
+    }
+
     public function index(Request $request)
     {
         $role = Role::find(Auth::user()->role_id);
@@ -370,6 +433,9 @@ class TransferController extends Controller
     {
        
         $data = $request->except('document');
+        // Jaring pengaman: angka bisa datang dalam format tampilan "50.000,00".
+        // Tanpa ini (float)"50.000,00" dibaca PHP sebagai 50 -> total mengecil 1000x.
+        $data = $this->normalizeMoneyInput($data);
 
         //return dd($data);
         $data['user_id'] = Auth::id();
@@ -552,10 +618,12 @@ class TransferController extends Controller
         }
         catch(\Exception $e){
             $lims_transfer_data->update(['is_sent'=> false]);
+            $this->syncTransferJournal($lims_transfer_data->id);
 
             return $this->setErrorMessage('Please Setup Your Mail Credentials First.');
         }
-        
+
+        $this->syncTransferJournal($lims_transfer_data->id);
 
         return redirect('transfers')->with('message', 'Transfer created successfully');
     }
@@ -757,6 +825,7 @@ class TransferController extends Controller
         $lims_transfer_data->item = $key + 1;
         $lims_transfer_data->grand_total = $lims_transfer_data->total_cost + $lims_transfer_data->shipping_cost;
         $lims_transfer_data->save();
+        $this->syncTransferJournal($lims_transfer_data->id);
         return redirect('transfers')->with('message', 'Transfer imported successfully');
     }
 
@@ -776,6 +845,9 @@ class TransferController extends Controller
     public function update(Request $request, $id)
     {
         $data = $request->except('document');
+        // Jaring pengaman: angka bisa datang dalam format tampilan "50.000,00".
+        // Tanpa ini (float)"50.000,00" dibaca PHP sebagai 50 -> total mengecil 1000x.
+        $data = $this->normalizeMoneyInput($data);
         //return dd($data);
         $document = $request->document;
         $data['created_at'] = date("Y-m-d", strtotime(str_replace("/", "-", $data['created_at'])));
@@ -1034,6 +1106,7 @@ class TransferController extends Controller
         }
 
         $lims_transfer_data->update($data);
+        $this->syncTransferJournal($lims_transfer_data->id);
         return redirect('transfers')->with('message', 'Transfer updated successfully');
     }
 
@@ -1080,6 +1153,7 @@ class TransferController extends Controller
                 }
                 $product_transfer_data->delete();
             }
+            JournalService::reverseForReference('transfer', $lims_transfer_data->id);
             $lims_transfer_data->delete();
             $this->fileDelete('documents/transfer/', $lims_transfer_data->document);
 
@@ -1172,6 +1246,7 @@ class TransferController extends Controller
             }
             $product_transfer_data->delete();
         }
+        JournalService::reverseForReference('transfer', $lims_transfer_data->id);
         $lims_transfer_data->delete();
         $this->fileDelete('documents/transfer/', $lims_transfer_data->document);
 

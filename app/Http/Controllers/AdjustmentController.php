@@ -47,14 +47,38 @@ class AdjustmentController extends Controller
             }
         }
     }
+
+    private function adjustmentWarehouseRow($productId, $warehouseId, $variantId = null, $rackId = null)
+    {
+        $query = Product_Warehouse::where([
+            ['product_id', $productId],
+            ['warehouse_id', $warehouseId],
+        ]);
+        if($variantId)
+            $query->where('variant_id', $variantId);
+        else
+            $query->whereNull('variant_id');
+
+        $row = $query->first();
+        if($row)
+            return $row;
+
+        return Product_Warehouse::create([
+            'product_id' => $productId,
+            'variant_id' => $variantId,
+            'warehouse_id' => $warehouseId,
+            'rack_id' => $rackId,
+            'qty' => 0,
+        ]);
+    }
     /**
-     * Post (or re-post) the "Selisih Kasir" journal entry for a stock
+     * Post (or re-post) the "Selisih Stok" journal entry for a stock
      * adjustment batch. Nets every line's (qty * unit_cost): lines with
      * action '-' (physical count lower than system => loss) increase the
      * net loss, lines with action '+' (physical count higher => gain)
      * decrease it.
-     * Net loss  => Dr Selisih Kasir (2300) / Cr Persediaan (1300)
-     * Net gain  => Dr Persediaan (1300)    / Cr Selisih Kasir (2300)
+     * Net loss  => Dr Selisih Stok Warehouse / Cr Persediaan Warehouse
+     * Net gain  => Dr Persediaan Warehouse   / Cr Selisih Stok Warehouse
      */
     private function postAdjustmentJournal($adjustmentId)
     {
@@ -77,14 +101,19 @@ class AdjustmentController extends Controller
             : date('Y-m-d');
         $description = 'Penyesuaian Stok - ' . ($lims_adjustment_data ? $lims_adjustment_data->reference_no : $adjustmentId);
 
-        $selisihKasirId = JournalService::accountIdByCode(JournalService::SELISIH_KASIR);
-        $persediaanId = JournalService::accountIdByCode(JournalService::PERSEDIAAN);
+        $warehouseId = $lims_adjustment_data ? $lims_adjustment_data->warehouse_id : null;
+        $selisihStokId = method_exists(JournalService::class, 'stockVarianceAccountIdForWarehouse')
+            ? JournalService::stockVarianceAccountIdForWarehouse($warehouseId)
+            : JournalService::accountIdByCode(JournalService::SELISIH_KASIR);
+        $persediaanId = method_exists(JournalService::class, 'inventoryAccountIdForWarehouse')
+            ? JournalService::inventoryAccountIdForWarehouse($warehouseId)
+            : JournalService::accountIdByCode(JournalService::PERSEDIAAN);
 
         if ($netLoss > 0) {
-            JournalService::postSimple($journalDate, $description, $selisihKasirId, $persediaanId, $netLoss, 'adjustment', $adjustmentId, $description);
+            JournalService::postSimple($journalDate, $description, $selisihStokId, $persediaanId, $netLoss, 'adjustment', $adjustmentId, $description);
         }
         else {
-            JournalService::postSimple($journalDate, $description, $persediaanId, $selisihKasirId, abs($netLoss), 'adjustment', $adjustmentId, $description);
+            JournalService::postSimple($journalDate, $description, $persediaanId, $selisihStokId, abs($netLoss), 'adjustment', $adjustmentId, $description);
         }
     }
     public function index()
@@ -199,6 +228,33 @@ class AdjustmentController extends Controller
         return $product_data;
     }
 
+    public function productSuggestions(Request $request)
+    {
+        $warehouse_id = $request->input('warehouse_id');
+        $term = trim($request->input('term', ''));
+        if (!$warehouse_id || $term === '') {
+            return response()->json([]);
+        }
+
+        $product_data = $this->getProduct($warehouse_id);
+        $codes = $product_data[0] ?? [];
+        $names = $product_data[1] ?? [];
+        $costs = $product_data[3] ?? [];
+        $suggestions = [];
+        foreach ($codes as $index => $code) {
+            $name = $names[$index] ?? '';
+            $item = $code . ' (' . $name . ')|' . ($costs[$index] ?? 0);
+            if (stripos($code, $term) !== false || stripos($name, $term) !== false || stripos($item, $term) !== false) {
+                $suggestions[] = $item;
+            }
+            if (count($suggestions) >= 20) {
+                break;
+            }
+        }
+
+        return response()->json($suggestions);
+    }
+
     public function limsProductSearch(Request $request)
     {
         $product_code = explode("(", $request['data']);
@@ -229,6 +285,44 @@ class AdjustmentController extends Controller
         $product[] = $lims_product_data->id;
         $product[] = $product_variant_id;
         $product[] = $product_info[1];
+
+        // Stok sistem diambil LANGSUNG dari product_warehouse untuk gudang/toko
+        // yang sedang dipilih, bukan dari array yang di-cache di browser. Tanpa
+        // ini, array lama (dari gudang/toko yang sebelumnya dipilih) bisa
+        // terbawa dan stok awal toko lain ikut terbaca. index 5 = qty,
+        // 6 = rack_id, 7 = rack_name.
+        $warehouse_id = $request->input('warehouse_id');
+        $current_qty = 0;
+        $current_rack_id = null;
+        $current_rack_name = null;
+        if ($warehouse_id) {
+            $pwQuery = DB::table('product_warehouse')
+                ->leftJoin('racks', 'product_warehouse.rack_id', '=', 'racks.id')
+                ->where('product_warehouse.product_id', $lims_product_data->id)
+                ->where('product_warehouse.warehouse_id', $warehouse_id);
+
+            if ($lims_product_data->is_variant) {
+                $variant_row = ProductVariant::where('product_id', $lims_product_data->id)
+                    ->where('item_code', $product_code[0])->first();
+                if ($variant_row)
+                    $pwQuery->where('product_warehouse.variant_id', $variant_row->variant_id);
+            }
+            else {
+                $pwQuery->whereNull('product_warehouse.variant_id');
+            }
+
+            $pw = $pwQuery->select('product_warehouse.qty', 'product_warehouse.rack_id', 'racks.name as rack_name')->first();
+            if ($pw) {
+                $current_qty = $pw->qty;
+                $current_rack_id = $pw->rack_id;
+                $current_rack_name = $pw->rack_name;
+            }
+        }
+        $product[] = $current_qty;
+        $product[] = $current_rack_id;
+        $product[] = $current_rack_name;
+        $product[] = $warehouse_id;
+
         return $product;
     }
 
@@ -268,11 +362,7 @@ class AdjustmentController extends Controller
             $lims_product_data = Product::find($pro_id);
             if($lims_product_data->is_variant) {
                 $lims_product_variant_data = ProductVariant::select('id', 'variant_id', 'qty')->FindExactProductWithCode($pro_id, $product_code[$key])->first();
-                $lims_product_warehouse_data = Product_Warehouse::where([
-                    ['product_id', $pro_id],
-                    ['variant_id', $lims_product_variant_data->variant_id ],
-                    ['warehouse_id', $data['warehouse_id'] ],
-                ])->first();
+                $lims_product_warehouse_data = $this->adjustmentWarehouseRow($pro_id, $data['warehouse_id'], $lims_product_variant_data->variant_id, $rack_id[$key] ?? null);
 
                 if($action[$key] == '-'){
                     $lims_product_variant_data->qty -= $qty[$key];
@@ -284,10 +374,7 @@ class AdjustmentController extends Controller
                 $variant_id = $lims_product_variant_data->variant_id;
             }
             else {
-                $lims_product_warehouse_data = Product_Warehouse::where([
-                    ['product_id', $pro_id],
-                    ['warehouse_id', $data['warehouse_id'] ],
-                    ])->first();
+                $lims_product_warehouse_data = $this->adjustmentWarehouseRow($pro_id, $data['warehouse_id'], null, $rack_id[$key] ?? null);
                 $variant_id = null;
             }
 
@@ -402,11 +489,7 @@ class AdjustmentController extends Controller
             $lims_product_data = Product::find($pro_id);
             if($lims_product_data->is_variant) {
                 $lims_product_variant_data = ProductVariant::select('id', 'variant_id', 'qty')->FindExactProductWithCode($pro_id, $product_code[$key])->first();
-                $lims_product_warehouse_data = Product_Warehouse::where([
-                    ['product_id', $pro_id],
-                    ['variant_id', $lims_product_variant_data->variant_id ],
-                    ['warehouse_id', $data['warehouse_id'] ],
-                ])->first();
+                $lims_product_warehouse_data = $this->adjustmentWarehouseRow($pro_id, $data['warehouse_id'], $lims_product_variant_data->variant_id, $rack_id[$key] ?? null);
                 //return $action[$key];
 
                 if($action[$key] == '-'){
@@ -419,10 +502,7 @@ class AdjustmentController extends Controller
                 $variant_id = $lims_product_variant_data->variant_id;
             }
             else {
-                $lims_product_warehouse_data = Product_Warehouse::where([
-                    ['product_id', $pro_id],
-                    ['warehouse_id', $data['warehouse_id'] ],
-                    ])->first();
+                $lims_product_warehouse_data = $this->adjustmentWarehouseRow($pro_id, $data['warehouse_id'], null, $rack_id[$key] ?? null);
                 $variant_id = null;
             }
 

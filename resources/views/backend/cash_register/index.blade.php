@@ -15,9 +15,9 @@
                     <th class="not-exported"></th>
                     <th>{{trans('file.User')}}</th>
                     <th>{{trans('file.Warehouse')}}</th>
-                    <th>Modal Kembalian</th>
+                    <th>Modal Kasir</th>
                     <th>Setor Kasir</th>
-                    <th>Selisih</th>
+                    <th>Catatan</th>
                     <th>{{trans('file.Opened at')}}</th>
                     <th>{{trans('file.Closed at')}}</th>
                     <th>{{trans('file.Status')}}</th>
@@ -33,7 +33,7 @@
                     <td>{{ $cash_register->warehouse->name }}</td>
                     <td>{{ number_format((float)$cash_register->cash_in_hand, $general_setting->decimal, ',', '.') }}</td>
                     <td>{{ $cash_register->deposit_amount !== null ? number_format((float)$cash_register->deposit_amount, $general_setting->decimal, ',', '.') : 'N/A' }}</td>
-                    <td>{{ $cash_register->cash_difference !== null ? number_format((float)$cash_register->cash_difference, $general_setting->decimal, ',', '.') : 'N/A' }}</td>
+                    <td>{{ $cash_register->closing_note ?: '-' }}</td>
                     <td>{{ date($general_setting->date_format . " h:i:s", strtotime($cash_register->created_at)) }}</td>
                     @if($cash_register->status)
                         <td>N/A</td>
@@ -54,8 +54,11 @@
                     <td>
                         <div class="btn-group">
                             <button type="button" data-id="{{$cash_register->id}}" class="register-details-btn btn btn-sm btn-info" data-toggle="modal" data-target="#register-details-modal" title="{{trans('file.View')}}"><i class="dripicons-preview"></i></button>
+                            @if(\Auth::user()->role_id <= 2)
                             <a href="{{route('cashRegister.print', $cash_register->id)}}" target="_blank" class="btn btn-sm btn-primary" title="Print"><i class="fa fa-print"></i></a>
+                            @endif
                             @if(!$cash_register->status)
+                            @if(\Auth::user()->role_id <= 2)
                             <button type="button"
                                 class="edit-deposit-btn btn btn-sm btn-warning"
                                 data-id="{{$cash_register->id}}"
@@ -67,6 +70,7 @@
                                 title="{{trans('file.edit')}}"><i class="dripicons-document-edit"></i></button>
                             @if($cash_register->approval_status != 'approved')
                             <button type="button" data-id="{{$cash_register->id}}" class="approve-btn btn btn-sm btn-success" data-toggle="modal" data-target="#approve-modal" title="Approve"><i class="fa fa-check"></i></button>
+                            @endif
                             @endif
                             @endif
                         </div>
@@ -90,6 +94,7 @@
                         <table class="table table-hover">
                             <tbody>
                                 <tr><td>Modal Kembalian:</td><td id="cash_in_hand" class="text-right"></td></tr>
+                                @if(\Auth::user()->role_id <= 2)
                                 <tr><td>{{trans('file.Total Sale Amount')}}:</td><td id="total_sale_amount" class="text-right"></td></tr>
                                 <tr><td>{{trans('file.Total Payment')}}:</td><td id="total_payment" class="text-right"></td></tr>
                                 <tr><td>Pembayaran Cash Penjualan:</td><td id="cash_sale_payment" class="text-right"></td></tr>
@@ -105,6 +110,7 @@
                                 <tr><td>Uang Fisik Dihitung:</td><td id="closing_cash_amount" class="text-right"></td></tr>
                                 <tr><td>Setor Kasir:</td><td id="deposit_amount" class="text-right"></td></tr>
                                 <tr><td>Selisih:</td><td id="cash_difference" class="text-right"></td></tr>
+                                @endif
                             </tbody>
                         </table>
                     </div>
@@ -113,13 +119,17 @@
                             @csrf
                             <input type="hidden" name="cash_register_id">
                             <div class="form-group">
-                                <label>Uang Fisik Dihitung *</label>
+                                <label>{{ \Auth::user()->role_id <= 2 ? 'Uang Fisik Dihitung *' : 'Uang Fisik Dihitung / Setor Kasir *' }}</label>
                                 <input type="number" step="any" name="closing_cash_amount" required class="form-control">
                             </div>
+                            @if(\Auth::user()->role_id > 2)
+                                <input type="hidden" name="deposit_amount">
+                            @else
                             <div class="form-group">
                                 <label>Setor Kasir</label>
                                 <input type="number" step="any" name="deposit_amount" class="form-control">
                             </div>
+                            @endif
                             <div class="form-group">
                                 <label>Catatan Tutup Kasir</label>
                                 <textarea name="closing_note" class="form-control"></textarea>
@@ -215,10 +225,18 @@
               });
               $('#register-details-modal textarea[name=closing_note]').val(data['closing_note']);
               $('#register-details-modal input[name=cash_register_id]').val(id);
-              $('#register-details-modal input[name=closing_cash_amount]').val(data['expected_cash_amount']);
-              $('#register-details-modal input[name=deposit_amount]').val(data['expected_cash_amount']);
+              // Jangan prefill dengan angka sistem: setoran harus murni hasil hitungan uang fisik.
+              $('#register-details-modal input[name=closing_cash_amount]').val('');
+              $('#register-details-modal input[name=deposit_amount]').val('');
+              $('#register-details-modal input[name=closing_cash_amount]').focus();
           }
       });
+    });
+
+    $('#register-details-modal input[name=closing_cash_amount]').on('input', function() {
+        @if(\Auth::user()->role_id > 2)
+        $('#register-details-modal input[name=deposit_amount]').val($(this).val());
+        @endif
     });
 
     $(".edit-deposit-btn").on("click", function () {

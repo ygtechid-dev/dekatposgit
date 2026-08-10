@@ -64,6 +64,35 @@ class HomeController extends Controller
         return view('backend.addonlist');
     }
 
+    /**
+     * Kasir (role_id > 2) tidak boleh melihat angka penjualan hari ini di dashboard.
+     * Kalau dia tahu revenue hari berjalan, setoran bisa "disesuaikan" dengan angka itu
+     * sehingga kelebihan uang dari penjualan yang lalai diinput tidak pernah muncul
+     * sebagai selisih kasir. Riwayat sampai kemarin tetap boleh dilihat.
+     */
+    private function dashboardEndDate($end_date)
+    {
+        if (Auth::user()->role_id <= 2)
+            return $end_date;
+
+        // Bandingkan sebagai timestamp: tanggal dari input bisa saja tidak ter-padding
+        // (mis. "2026-7-29") sehingga perbandingan string akan salah.
+        $yesterday = strtotime('-1 day', strtotime(date('Y-m-d')));
+        $end = strtotime($end_date);
+        if(!$end)
+            return $end_date;
+
+        return $end > $yesterday ? date('Y-m-d', $yesterday) : $end_date;
+    }
+
+    /**
+     * Batas atas tanggal untuk daftar transaksi terbaru di dashboard kasir.
+     */
+    private function hideTodayForStaff()
+    {
+        return Auth::user()->role_id > 2;
+    }
+
     public function dashboard()
     {
         //code for smscloud
@@ -111,7 +140,7 @@ class HomeController extends Controller
         }
 
         $start_date = date("Y").'-'.date("m").'-'.'01';
-        $end_date = date("Y").'-'.date("m").'-'.date('t', mktime(0, 0, 0, date("m"), 1, date("Y")));
+        $end_date = $this->dashboardEndDate(date("Y").'-'.date("m").'-'.date('t', mktime(0, 0, 0, date("m"), 1, date("Y"))));
         $yearly_sale_amount = [];
 
         if(Auth::user()->role_id > 2 && cache()->get('general_setting')->staff_access == 'own')
@@ -157,7 +186,7 @@ class HomeController extends Controller
         while($start < $end)
         {
             $start_date = date("Y-m", $start).'-'.'01';
-            $end_date = date("Y-m", $start).'-'.date('t', mktime(0, 0, 0, date("m", $start), 1, date("Y", $start)));
+            $end_date = $this->dashboardEndDate(date("Y-m", $start).'-'.date('t', mktime(0, 0, 0, date("m", $start), 1, date("Y", $start))));
 
             if(Auth::user()->role_id > 2 && cache()->get('general_setting')->staff_access == 'own') {
                 $recieved_amount = DB::table('payments')->whereNotNull('sale_id')->whereDate('created_at', '>=' , $start_date)->whereDate('created_at', '<=' , $end_date)->where('user_id', Auth::id())->sum('amount');
@@ -188,7 +217,7 @@ class HomeController extends Controller
         while($start < $end)
         {
             $start_date = date("Y").'-'.date('m', $start).'-'.'01';
-            $end_date = date("Y").'-'.date('m', $start).'-'.date('t', mktime(0, 0, 0, date("m", $start), 1, date("Y", $start)));
+            $end_date = $this->dashboardEndDate(date("Y").'-'.date('m', $start).'-'.date('t', mktime(0, 0, 0, date("m", $start), 1, date("Y", $start))));
             if(Auth::user()->role_id > 2 && cache()->get('general_setting')->staff_access == 'own') {
                 $sale_amount = Sale::whereDate('created_at', '>=' , $start_date)->whereDate('created_at', '<=' , $end_date)->where('user_id', Auth::id())->sum('grand_total');
                 $purchase_amount = Purchase::whereDate('created_at', '>=' , $start_date)->whereDate('created_at', '<=' , $end_date)->where('user_id', Auth::id())->sum('grand_total');
@@ -273,7 +302,12 @@ class HomeController extends Controller
     {
         if(Auth::user()->role_id > 2 && cache()->get('general_setting')->staff_access == 'own')
         {
-            $recent_sale = Sale::join('customers', 'customers.id', '=', 'sales.customer_id')->select('sales.id','sales.reference_no','sales.sale_status','sales.created_at','sales.grand_total','sales.user_id','customers.name')->orderBy('id', 'desc')->where('sales.user_id', Auth::id())->take(5)->get();
+            $recent_sale = Sale::join('customers', 'customers.id', '=', 'sales.customer_id')->select('sales.id','sales.reference_no','sales.sale_status','sales.created_at','sales.grand_total','sales.user_id','customers.name')->orderBy('id', 'desc')->where('sales.user_id', Auth::id())->whereDate('sales.created_at', '<', date('Y-m-d'))->take(5)->get();
+            return response()->json($recent_sale);
+        }
+        elseif($this->hideTodayForStaff())
+        {
+            $recent_sale = Sale::join('customers', 'customers.id', '=', 'sales.customer_id')->select('sales.id','sales.reference_no','sales.sale_status','sales.created_at','sales.grand_total','customers.name')->orderBy('id', 'desc')->whereDate('sales.created_at', '<', date('Y-m-d'))->take(5)->get();
             return response()->json($recent_sale);
         }
         else
@@ -315,7 +349,12 @@ class HomeController extends Controller
     {
         if(Auth::user()->role_id > 2 && cache()->get('general_setting')->staff_access == 'own')
         {
-            $recent_payment = Payment::select('id','payment_reference','amount','paying_method','created_at','user_id')->orderBy('id', 'desc')->where('user_id', Auth::id())->take(5)->get();
+            $recent_payment = Payment::select('id','payment_reference','amount','paying_method','created_at','user_id')->orderBy('id', 'desc')->where('user_id', Auth::id())->whereDate('created_at', '<', date('Y-m-d'))->take(5)->get();
+            return response()->json($recent_payment);
+        }
+        elseif($this->hideTodayForStaff())
+        {
+            $recent_payment = Payment::select('id','payment_reference','amount','paying_method','created_at')->orderBy('id', 'desc')->whereDate('created_at', '<', date('Y-m-d'))->take(5)->get();
             return response()->json($recent_payment);
         }
         else
@@ -327,6 +366,11 @@ class HomeController extends Controller
 
     public function dashboardFilter($start_date, $end_date)
     {
+        // Kasir bisa memanggil endpoint ini dengan rentang tanggal bebas, termasuk hari ini.
+        $end_date = $this->dashboardEndDate($end_date);
+        if(strtotime($end_date) < strtotime($start_date))
+            return [0, 0, 0, 0];
+
         if(Auth::user()->role_id > 2 && cache()->get('general_setting')->staff_access == 'own') {
             config()->set('database.connections.mysql.strict', false);
             DB::reconnect();
@@ -488,6 +532,18 @@ class HomeController extends Controller
                 $date = $year.'-'.$month.'-0'.$start;
             else
                 $date = $year.'-'.$month.'-'.$start;
+            // Kalender ini memuat total penjualan per hari. Untuk kasir, angka hari ini
+            // ditahan supaya tidak bisa dipakai mengkalibrasi setoran.
+            if($this->hideTodayForStaff() && strtotime($date) >= strtotime(date('Y-m-d'))) {
+                $sale_generated[$start] = 0;
+                $sale_grand_total[$start] = 0;
+                $purchase_generated[$start] = 0;
+                $purchase_grand_total[$start] = 0;
+                $quotation_generated[$start] = 0;
+                $quotation_grand_total[$start] = 0;
+                $start++;
+                continue;
+            }
             $sale_generated[$start] = Sale::whereDate('created_at', $date)->where('user_id', Auth::id())->count();
             $sale_grand_total[$start] = Sale::whereDate('created_at', $date)->where('user_id', Auth::id())->sum('grand_total');
             $purchase_generated[$start] = Purchase::whereDate('created_at', $date)->where('user_id', Auth::id())->count();

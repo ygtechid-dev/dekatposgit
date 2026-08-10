@@ -390,7 +390,7 @@ var rownumber = $('table.order-list tbody tr:last').index();
 for(rowindex  =0; rowindex <= rownumber; rowindex++){
     product_cost.push(parseFloat($('table.order-list tbody tr:nth-child(' + (rowindex + 1) + ')').find('.product-cost').val()));
     exist_code.push($('table.order-list tbody tr:nth-child(' + (rowindex + 1) + ')').find('td:nth-child(2)').text());
-    var total_discount = parseFloat($('table.order-list tbody tr:nth-child(' + (rowindex + 1) + ')').find('.discount').text());
+    var total_discount = parseLocalizedNumber($('table.order-list tbody tr:nth-child(' + (rowindex + 1) + ')').find('.discount').text());
     var quantity = parseFloat($('table.order-list tbody tr:nth-child(' + (rowindex + 1) + ')').find('.qty').val());
     exist_qty.push(quantity);
     product_discount.push((total_discount / quantity).toFixed({{$general_setting->decimal}}));
@@ -786,7 +786,7 @@ function calculateTotal() {
     //Sum of discount
     var total_discount = 0;
     $(".discount").each(function() {
-        total_discount += parseFloat($(this).text());
+        total_discount += parseLocalizedNumber($(this).text());
     });
     $("#total-discount").text(total_discount.toFixed({{$general_setting->decimal}}));
     $('input[name="total_discount"]').val(total_discount.toFixed({{$general_setting->decimal}}));
@@ -794,7 +794,7 @@ function calculateTotal() {
     //Sum of tax
     var total_tax = 0;
     $(".tax").each(function() {
-        total_tax += parseFloat($(this).text());
+        total_tax += parseLocalizedNumber($(this).text());
     });
     $("#total-tax").text(total_tax.toFixed({{$general_setting->decimal}}));
     $('input[name="total_tax"]').val(total_tax.toFixed({{$general_setting->decimal}}));
@@ -802,7 +802,7 @@ function calculateTotal() {
     //Sum of subtotal
     var total = 0;
     $(".sub-total").each(function() {
-        total += parseFloat($(this).text());
+        total += parseLocalizedNumber($(this).text());
     });
     $("#total").text(total.toFixed({{$general_setting->decimal}}));
     $('input[name="total_cost"]').val(total.toFixed({{$general_setting->decimal}}));
@@ -814,8 +814,8 @@ function calculateGrandTotal() {
 
     var item = $('table.order-list tbody tr:last').index();
 
-    var total_qty = parseFloat($('#total-qty').text());
-    var subtotal = parseFloat($('#total').text());
+    var total_qty = parseLocalizedNumber($('#total-qty').text());
+    var subtotal = parseLocalizedNumber($('#total').text());
     var order_tax = parseFloat($('select[name="order_tax_rate"]').val());
     var order_discount = parseFloat($('input[name="order_discount"]').val());
     var shipping_cost = parseFloat($('input[name="shipping_cost"]').val());

@@ -214,6 +214,7 @@
                                                 <label>{{trans('file.Product Price')}} *</strong> </label>
                                                 <input type="text" inputmode="decimal" autocomplete="off" name="price" required class="form-control price-mode-single-input money-input" data-required-numeric="1">
                                                 <span class="validation-msg"></span>
+                                                <small class="text-danger price-below-cost-warning" style="display:none">Peringatan: harga jual di bawah harga pokok (HPP)!</small>
                                             </div>
                                         </div>
                                         <div class="col-md-4">
@@ -1358,10 +1359,33 @@
     // underlying value plain-numeric ("1234567.89") on submit via
     // unformatMoneyValue()/unformatAllMoneyInputs().
 
+    // Menerima dua bentuk sekaligus: mesin ("8500", "8500.5") dan tampilan
+    // ("8.500", "8.500,75"). Tanpa ini, memformat ulang nilai yang sudah tampil
+    // membuat "8.500" dibaca parseFloat sebagai 8.5.
+    function parseMoneyNumber(raw) {
+        if (raw === undefined || raw === null || raw === '') return NaN;
+        if (typeof raw === 'number') return raw;
+
+        var s = String(raw).trim().replace(/[^\d.,\-]/g, '');
+        if (s === '' || s === '-') return NaN;
+
+        if (s.indexOf(',') !== -1) {
+            s = s.replace(/\./g, '').replace(',', '.');
+        } else if (s.indexOf('.') !== -1) {
+            var parts = s.split('.');
+            var last = parts.pop();
+            // "8.500" / "1.234.567" = pemisah ribuan; "8.5" / "8.50" = desimal.
+            s = (parts.length > 1 || last.length === 3)
+                ? parts.join('') + last
+                : parts.join('') + '.' + last;
+        }
+        return parseFloat(s);
+    }
+
     // Raw DB value ("1234.5" / "1234" / "") -> display string ("1.234,50").
     function moneyDisplay(raw) {
         if (raw === undefined || raw === null || raw === '') return '';
-        var num = parseFloat(String(raw).replace(',', '.'));
+        var num = parseMoneyNumber(raw);
         if (isNaN(num)) return '';
         var fixed = num.toFixed(2);
         var bits = fixed.split('.');
@@ -1369,12 +1393,11 @@
         return intPart + ',' + bits[1];
     }
 
-    // Display string ("1.234,50") -> plain numeric string ("1234.50") for submit.
+    // Display string ("1.234,50") -> plain numeric string ("1234.5") for submit.
     function unformatMoneyValue(display) {
-        if (display === undefined || display === null) return '';
-        var val = String(display).replace(/\./g, '');
-        val = val.replace(',', '.');
-        return val;
+        if (display === undefined || display === null || display === '') return '';
+        var num = parseMoneyNumber(display);
+        return isNaN(num) ? '' : String(num);
     }
 
     // Re-mask as the user types: keep digits + at most one comma, dot-group the integer part.
@@ -1433,6 +1456,45 @@
         if (isNaN(cost) || isNaN(price) || cost === 0) return '';
         var percent = ((price - cost) / cost) * 100;
         return Math.round(percent * 100) / 100;
+    }
+
+    // ---- Peringatan (non-blocking) kalau harga jual di bawah harga pokok/HPP ----
+    function checkPriceBelowCostSingle() {
+        var cost = parseFloat(unformatMoneyValue($('#price-mode-single input[name="cost"]').val())) || 0;
+        var price = parseFloat(unformatMoneyValue($('#price-mode-single input[name="price"]').val())) || 0;
+        var below = cost > 0 && price > 0 && price < cost;
+        $('.price-below-cost-warning').toggle(below);
+        $('#price-mode-single input[name="price"]').toggleClass('is-invalid border-danger', below);
+    }
+    $(document).on('input', '#price-mode-single input[name="cost"], #price-mode-single input[name="price"], #price-mode-single input[name="markup_percent"]', checkPriceBelowCostSingle);
+
+    function checkPriceBelowCostRow($row) {
+        var cost = parseFloat(unformatMoneyValue($row.find('.base-cost').val())) || 0;
+        var price = parseFloat(unformatMoneyValue($row.find('.base-price').val())) || 0;
+        var below = cost > 0 && price > 0 && price < cost;
+        $row.find('.base-price').toggleClass('is-invalid border-danger', below)
+            .attr('title', below ? 'Peringatan: harga jual di bawah harga pokok (HPP)!' : '');
+    }
+    $('#price-mode-table-body').on('input', '.base-cost, .base-markup, .base-price', function() {
+        checkPriceBelowCostRow($(this).closest('tr'));
+    });
+
+    function hasAnyPriceBelowCost() {
+        if ($('#price_mode').val() == 'single') {
+            var cost = parseFloat(unformatMoneyValue($('#price-mode-single input[name="cost"]').val())) || 0;
+            var price = parseFloat(unformatMoneyValue($('#price-mode-single input[name="price"]').val())) || 0;
+            return cost > 0 && price > 0 && price < cost;
+        }
+        var below = false;
+        $('#price-mode-table-body tr[data-unit-id]').each(function() {
+            var cost = parseFloat(unformatMoneyValue($(this).find('.base-cost').val())) || 0;
+            var price = parseFloat(unformatMoneyValue($(this).find('.base-price').val())) || 0;
+            if (cost > 0 && price > 0 && price < cost) {
+                below = true;
+                return false;
+            }
+        });
+        return below;
     }
 
     // Mode "Satu Harga" (single)
@@ -1877,6 +1939,9 @@
             $('#submit-btn').on("click", function (e) {
                 e.preventDefault();
                 if ( $("#product-form").valid() && validate() ) {
+                    if (hasAnyPriceBelowCost() && !confirm('Harga jual ada yang di bawah HPP. Tetap simpan produk ini?')) {
+                        return;
+                    }
                     unformatAllMoneyInputs();
                     $('#submit-btn').attr('disabled','true').html('<span class="spinner-border text-light" role="status"></span> {{trans("file.Saving")}}...');
                     tinyMCE.triggerSave();

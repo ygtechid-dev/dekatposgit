@@ -30,9 +30,16 @@
         @endif
         <div class="form-inline float-right">
             <label class="mr-2 mb-0">Status:</label>
-            <select id="product-status-filter" class="form-control">
+            <select id="product-status-filter" class="form-control mr-3">
                 <option value="active">Aktif</option>
                 <option value="inactive">Non-aktif</option>
+            </select>
+            <label class="mr-2 mb-0">Stok:</label>
+            <select id="product-stock-filter" class="form-control">
+                <option value="all">Semua</option>
+                <option value="in_stock">Masih Ada Stok</option>
+                <option value="minus">Stok Minus</option>
+                <option value="empty">Stok Kosong</option>
             </select>
         </div>
     </div>
@@ -412,10 +419,24 @@
                 url:"products/product-data",
                 data:{
                     all_permission: all_permission,
-                    status: function() { return $('#product-status-filter').val(); }
+                    status: function() { return $('#product-status-filter').val(); },
+                    stock_filter: function() { return $('#product-stock-filter').val(); }
                 },
                 dataType: "json",
-                type:"post"
+                type:"post",
+                error: function(xhr, status, err) {
+                    // Tampilkan penyebab sebenarnya, bukan cuma "Ajax error".
+                    var msg = 'Gagal memuat daftar produk (HTTP ' + xhr.status + ').';
+                    try {
+                        var res = JSON.parse(xhr.responseText);
+                        if(res && res.message) msg += ' ' + res.message;
+                        else if(res && res.error) msg += ' ' + res.error;
+                    } catch(e) {
+                        if(xhr.status === 419) msg += ' Sesi login kedaluwarsa, silakan muat ulang halaman.';
+                    }
+                    console.error('product-data-table:', xhr.status, xhr.responseText);
+                    alert(msg);
+                }
             },
             "createdRow": function( row, data, dataIndex ) {
                 $(row).addClass('product-link');
@@ -583,7 +604,7 @@
             ],
         } );
 
-        $('#product-status-filter').on('change', function() {
+        $('#product-status-filter, #product-stock-filter').on('change', function() {
             table.ajax.reload();
         });
 

@@ -40,6 +40,7 @@
                 <li id="adjustment-list-menu"><a href="{{route('qty_adjustment.index')}}">{{trans('file.Adjustment List')}}</a></li>
                 @endif
                 @if($rack_plan_active)
+                <li id="rack-menu"><a href="{{route('rack.page')}}">Rak</a></li>
                 <li id="plan-toko-menu"><a href="{{route('rack.planToko')}}">Plan Toko</a></li>
                 <li id="plan-gudang-menu"><a href="{{route('rack.planGudang')}}">Plan Gudang</a></li>
                 @endif
@@ -56,12 +57,6 @@
             <li><a href="#purchase" aria-expanded="false" data-toggle="collapse"> <i class="dripicons-card"></i><span>{{trans('file.Purchase')}}</span></a>
             <ul id="purchase" class="collapse list-unstyled ">
                 <li id="purchase-list-menu"><a href="{{route('purchases.index')}}">{{trans('file.Purchase List')}}</a></li>
-                <?php
-                $add_permission_active = $role_has_permissions_list->where('name', 'purchases-add')->first();
-                ?>
-                @if($add_permission_active)
-                <li id="purchase-import-menu"><a href="{{url('purchases/purchase_by_csv')}}">{{trans('file.Import Purchase By CSV')}}</a></li>
-                @endif
             </ul>
             </li>
             @endif
@@ -84,8 +79,7 @@
                 @endif
                 @if($sale_add_permission_active)
                 <li><a href="{{route('sale.pos')}}">POS</a></li>
-                <li id="sale-create-menu"><a href="{{route('sales.create')}}">{{trans('file.Add Sale')}}</a></li>
-                <li id="sale-import-menu"><a href="{{url('sales/sale_by_csv')}}">{{trans('file.Import Sale By CSV')}}</a></li>
+                <li id="pos-simple-menu"><a href="{{route('sale.posSimple')}}">POS Simple</a></li>
                 @endif
 
                 @if($gift_card_permission_active)
@@ -102,7 +96,16 @@
             </li>
             @endif
 
+            <?php
+            // Menu kasir sekarang punya izinnya sendiri. Role lama yang belum pernah
+            // di-set (permission belum ada di DB) tetap melihat menunya supaya kasir
+            // tidak terkunci setelah update; begitu izin ini dipakai, barulah ia menyaring.
+            $cash_register_permission_exists = \Spatie\Permission\Models\Permission::where('name', 'cash_register-index')->exists();
+            $cash_register_permission_active = $role_has_permissions_list->where('name', 'cash_register-index')->first();
+            ?>
+            @if(!$cash_register_permission_exists || $cash_register_permission_active)
             <li id="cash-register-menu"><a href="{{route('cashRegister.index')}}"> <i class="dripicons-wallet"></i><span>Cash Register</span></a></li>
+            @endif
 
             <?php
             $index_permission_active = $role_has_permissions_list->where('name', 'quotes-index')->first();
@@ -111,11 +114,6 @@
             <li><a href="#quotation" aria-expanded="false" data-toggle="collapse"> <i class="dripicons-document"></i><span>{{trans('file.Quotation')}}</span><span></a>
             <ul id="quotation" class="collapse list-unstyled ">
                 <li id="quotation-list-menu"><a href="{{route('quotations.index')}}">{{trans('file.Quotation List')}}</a></li>
-                <?php
-                $add_permission_active = $role_has_permissions_list->where('name', 'quotes-add')->first();
-                ?>
-                @if($add_permission_active)
-                @endif
             </ul>
             </li>
             @endif
@@ -126,12 +124,6 @@
             <li><a href="#transfer" aria-expanded="false" data-toggle="collapse"> <i class="dripicons-export"></i><span>{{trans('file.Transfer')}}</span></a>
             <ul id="transfer" class="collapse list-unstyled ">
                 <li id="transfer-list-menu"><a href="{{route('transfers.index')}}">{{trans('file.Transfer List')}}</a></li>
-                <?php
-                $add_permission_active = $role_has_permissions_list->where('name', 'transfers-add')->first();
-                ?>
-                @if($add_permission_active)
-                <li id="transfer-import-menu"><a href="{{url('transfers/transfer_by_csv')}}">{{trans('file.Import Transfer By CSV')}}</a></li>
-                @endif
             </ul>
             </li>
             @endif
@@ -172,8 +164,6 @@
 
             $expense_index_permission_active = $role_has_permissions_list->where('name', 'expenses-index')->first();
 
-            $expense_add_permission_active = $role_has_permissions_list->where('name', 'expenses-add')->first();
-
             ?>
             @if($balance_sheet_permission_active || $profit_loss_permission_active || $account_statement_permission_active || $money_transfer_permission_active || $coa_permission_active || $journal_permission_active || $general_ledger_permission_active || $trial_balance_permission_active || $expense_index_permission_active)
             <li class=""><a href="#account" aria-expanded="false" data-toggle="collapse"> <i class="dripicons-briefcase"></i><span>{{trans('file.Accounting')}}</span></a>
@@ -205,9 +195,6 @@
                 @if($expense_index_permission_active)
                 <li id="exp-cat-menu"><a href="{{route('expense_categories.index')}}">{{trans('file.Expense Category')}}</a></li>
                 <li id="exp-list-menu"><a href="{{route('expenses.index')}}">{{trans('file.Expense List')}}</a></li>
-                @if($expense_add_permission_active)
-                <li><a id="add-expense" href=""> {{trans('file.Add Expense')}}</a></li>
-                @endif
                 @endif
             </ul>
             </li>
@@ -262,43 +249,19 @@
 
                 @if($user_index_permission_active)
                 <li id="user-list-menu"><a href="{{route('user.index')}}">{{trans('file.User List')}}</a></li>
-                <?php
-                    $user_add_permission_active = $role_has_permissions_list->where('name', 'users-add')->first();
-                ?>
-                @if($user_add_permission_active)
-                <li id="user-create-menu"><a href="{{route('user.create')}}">{{trans('file.Add User')}}</a></li>
-                @endif
                 @endif
 
                 @if($customer_index_permission_active)
                 <li id="customer-list-menu"><a href="{{route('customer.index')}}">{{trans('file.Customer List')}}</a></li>
-                <?php
-                    $customer_add_permission_active = $role_has_permissions_list->where('name', 'customers-add')->first();
-                ?>
-                @if($customer_add_permission_active)
-                <li id="customer-create-menu"><a href="{{route('customer.create')}}">{{trans('file.Add Customer')}}</a></li>
-                @endif
                 <li id="customer-due-payment-menu"><a href="{{route('customer.duePayment')}}">Pembayaran Piutang</a></li>
                 @endif
 
                 @if($biller_index_permission_active)
                 <li id="biller-list-menu"><a href="{{route('biller.index')}}">{{trans('file.Biller List')}}</a></li>
-                <?php
-                    $biller_add_permission_active = $role_has_permissions_list->where('name', 'billers-add')->first();
-                ?>
-                @if($biller_add_permission_active)
-                <li id="biller-create-menu"><a href="{{route('biller.create')}}">{{trans('file.Add Biller')}}</a></li>
-                @endif
                 @endif
 
                 @if($supplier_index_permission_active)
                 <li id="supplier-list-menu"><a href="{{route('supplier.index')}}">{{trans('file.Supplier List')}}</a></li>
-                <?php
-                    $supplier_add_permission_active = $role_has_permissions_list->where('name', 'suppliers-add')->first();
-                ?>
-                @if($supplier_add_permission_active)
-                <li id="supplier-create-menu"><a href="{{route('supplier.create')}}">{{trans('file.Add Supplier')}}</a></li>
-                @endif
                 @endif
             </ul>
             </li>

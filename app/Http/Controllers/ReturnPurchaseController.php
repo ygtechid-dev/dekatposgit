@@ -30,7 +30,67 @@ use App\Services\JournalService;
 
 class ReturnPurchaseController extends Controller
 {
+    use \App\Traits\MoneyInput;
     use TenantInfo;
+
+    /**
+     * Jurnal otomatis retur pembelian.
+     *
+     *   Dr Kas/Bank            (kalau retur diuangkan / account_id diisi)
+     *   Dr Hutang Gudang       (kalau retur mengurangi hutang ke supplier)
+     *       Cr Persediaan Gudang
+     *
+     * Sebelumnya blok ini memakai akun global 1300/2100 lewat
+     * accountIdByCode(). Kalau akun global itu tidak ada (instalasi yang
+     * bagan akunnya per gudang), accountIdByCode() mengembalikan null,
+     * postSimple() melempar exception, dan exception-nya ditelan `catch {}`
+     * kosong - jadi retur tersimpan tapi TIDAK PERNAH terjurnal tanpa
+     * pesan error apa pun. Sekarang akunnya memakai resolver per gudang
+     * (sama seperti pembelian, jadi Persediaan yang dikredit adalah akun
+     * gudang yang sama dengan yang didebet waktu pembelian) dan setiap
+     * kegagalan dicatat di log + ditampilkan ke pengguna.
+     */
+    private function postReturnPurchaseJournal($lims_return_data)
+    {
+        $amount = (float) $lims_return_data->grand_total;
+        if ($amount <= 0) {
+            return;
+        }
+
+        $description = 'Retur pembelian ' . $lims_return_data->reference_no;
+
+        try {
+            $persediaan_id = JournalService::inventoryAccountIdForWarehouse($lims_return_data->warehouse_id);
+
+            if ($lims_return_data->account_id) {
+                // Uang kembali dari supplier ke kas/bank.
+                $debit_id = JournalService::coaIdForCashAccount($lims_return_data->account_id);
+            }
+            else {
+                // Retur mengurangi hutang ke supplier di gudang yang sama.
+                $debit_id = JournalService::payableAccountIdForWarehouse($lims_return_data->warehouse_id);
+            }
+
+            JournalService::postSimple(
+                $lims_return_data->created_at ?? now(),
+                $description,
+                $debit_id,
+                $persediaan_id,
+                $amount,
+                'return_purchase',
+                $lims_return_data->id
+            );
+        } catch (\Throwable $e) {
+            \Log::error('Gagal posting jurnal retur pembelian #' . $lims_return_data->id . ': ' . $e->getMessage(), [
+                'return_id' => $lims_return_data->id,
+                'reference_no' => $lims_return_data->reference_no,
+                'warehouse_id' => $lims_return_data->warehouse_id,
+                'account_id' => $lims_return_data->account_id,
+                'grand_total' => $lims_return_data->grand_total,
+            ]);
+            session()->flash('not_permitted', 'Retur tersimpan, tapi jurnal otomatis GAGAL: ' . $e->getMessage());
+        }
+    }
 
     public function index(Request $request)
     {
@@ -417,6 +477,9 @@ class ReturnPurchaseController extends Controller
     public function store(Request $request)
     {
         $data = $request->except('document');
+        // Jaring pengaman: angka bisa datang dalam format tampilan "50.000,00".
+        // Tanpa ini (float)"50.000,00" dibaca PHP sebagai 50 -> total mengecil 1000x.
+        $data = $this->normalizeMoneyInput($data);
         //return dd($data);
         $data['reference_no'] = 'prr-' . date("Ymd") . '-'. date("his");
         $data['user_id'] = Auth::id();
@@ -586,12 +649,9 @@ class ReturnPurchaseController extends Controller
             );
         }
 
-        //auto-post journal: purchase return (Dr Kas/Hutang Usaha, Cr Persediaan)
-        try {
-            $persediaan_id = JournalService::accountIdByCode(JournalService::PERSEDIAAN);
-            $debit_id = JournalService::coaIdForCashAccount($lims_return_data->account_id);
-            JournalService::postSimple($lims_return_data->created_at ?? now(), 'Retur pembelian ' . $lims_return_data->reference_no, $debit_id, $persediaan_id, $lims_return_data->grand_total, 'return_purchase', $lims_return_data->id);
-        } catch (\Exception $e) {}
+        //auto-post journal: purchase return (Dr Kas/Hutang Gudang, Cr Persediaan Gudang)
+        $lims_return_data->refresh();
+        $this->postReturnPurchaseJournal($lims_return_data);
 
         $message = 'Return created successfully';
         if($mail_data['email']){
@@ -715,6 +775,9 @@ class ReturnPurchaseController extends Controller
     public function update(Request $request, $id)
     {
         $data = $request->except('document');
+        // Jaring pengaman: angka bisa datang dalam format tampilan "50.000,00".
+        // Tanpa ini (float)"50.000,00" dibaca PHP sebagai 50 -> total mengecil 1000x.
+        $data = $this->normalizeMoneyInput($data);
         //return dd($data);
         $document = $request->document;
         $lims_return_data = ReturnPurchase::find($id);
@@ -916,12 +979,12 @@ class ReturnPurchaseController extends Controller
         // diposting ulang dengan angka terbaru - sama seperti alur di store().
         try {
             JournalService::reverseForReference('return_purchase', $lims_return_data->id);
-            $persediaan_id = JournalService::accountIdByCode(JournalService::PERSEDIAAN);
-            $debit_id = JournalService::coaIdForCashAccount($lims_return_data->account_id);
-            JournalService::postSimple($lims_return_data->created_at ?? now(), 'Retur pembelian ' . $lims_return_data->reference_no, $debit_id, $persediaan_id, $lims_return_data->grand_total, 'return_purchase', $lims_return_data->id);
-        } catch (\Exception $e) {
-            // Jangan sampai kegagalan posting jurnal membatalkan update retur itu sendiri.
+        } catch (\Throwable $e) {
+            \Log::error('Gagal membalik jurnal retur pembelian #' . $lims_return_data->id . ': ' . $e->getMessage());
         }
+        $lims_return_data->refresh();
+        $this->postReturnPurchaseJournal($lims_return_data);
+
         $message = 'Return updated successfully';
         if($data['supplier_id']) {
             $lims_supplier_data = Supplier::find($data['supplier_id']);
@@ -993,7 +1056,9 @@ class ReturnPurchaseController extends Controller
             }
             try {
                 JournalService::reverseForReference('return_purchase', $lims_return_data->id);
-            } catch (\Exception $e) {}
+            } catch (\Throwable $e) {
+                \Log::error('Gagal membalik jurnal retur pembelian #' . $lims_return_data->id . ': ' . $e->getMessage());
+            }
             $lims_return_data->delete();
             $this->fileDelete('documents/purchase_return/', $lims_return_data->document);
         }
@@ -1051,7 +1116,9 @@ class ReturnPurchaseController extends Controller
         }
         try {
             JournalService::reverseForReference('return_purchase', $lims_return_data->id);
-        } catch (\Exception $e) {}
+        } catch (\Throwable $e) {
+            \Log::error('Gagal membalik jurnal retur pembelian #' . $lims_return_data->id . ': ' . $e->getMessage());
+        }
         $lims_return_data->delete();
         $this->fileDelete('documents/purchase_return/', $lims_return_data->document);
 

@@ -22,9 +22,16 @@
                     <div class="col-md-3">
                         <div class="form-group">
                             <label>Rak (opsional)</label>
+                            {{-- Semua rak dirender langsung dari server (tanpa AJAX). Kalau JS
+                                 jalan, daftar ini dipersempit sesuai gudang/toko yang dipilih;
+                                 kalau JS gagal, rak tetap bisa dipilih manual. --}}
                             <select id="print-rack-id" class="form-control">
                                 <option value="">- Semua Rak -</option>
+                                @foreach($lims_rack_all as $rack)
+                                <option value="{{$rack->id}}" data-warehouse="{{$rack->warehouse_id}}">{{$rack->name}}{{ $rack->warehouse ? ' - ' . $rack->warehouse->name : '' }}</option>
+                                @endforeach
                             </select>
+                            <small class="text-muted">{{ count($lims_rack_all) }} rak terdaftar</small>
                         </div>
                     </div>
                     <div class="col-md-3">
@@ -44,8 +51,11 @@
                             <select name="rak_toko" class="form-control">
                                 <option value="">- Semua Rak Toko -</option>
                                 @foreach($lims_rack_toko_list as $rack)
-                                <option value="{{$rack->id}}" @selected($rak_toko_filter == $rack->id)>{{$rack->name}}</option>
+                                <option value="{{$rack->id}}" @selected($rak_toko_filter == $rack->id)>{{$rack->name}}{{ $rack->warehouse ? ' - ' . $rack->warehouse->name : '' }}</option>
                                 @endforeach
+                                @if(!count($lims_rack_toko_list))
+                                <option value="" disabled>- Belum ada rak di gudang bertipe Toko -</option>
+                                @endif
                             </select>
                         </div>
                     </div>
@@ -55,8 +65,11 @@
                             <select name="rak_gudang" class="form-control">
                                 <option value="">- Semua Rak Gudang -</option>
                                 @foreach($lims_rack_gudang_list as $rack)
-                                <option value="{{$rack->id}}" @selected($rak_gudang_filter == $rack->id)>{{$rack->name}}</option>
+                                <option value="{{$rack->id}}" @selected($rak_gudang_filter == $rack->id)>{{$rack->name}}{{ $rack->warehouse ? ' - ' . $rack->warehouse->name : '' }}</option>
                                 @endforeach
+                                @if(!count($lims_rack_gudang_list))
+                                <option value="" disabled>- Belum ada rak di gudang -</option>
+                                @endif
                             </select>
                         </div>
                     </div>
@@ -105,22 +118,48 @@
     $("ul#report").siblings('a').attr('aria-expanded','true');
     $("ul#report").addClass("show");
     $("ul#report #rack-stock-report-menu").addClass("active");
-    $('.selectpicker').selectpicker('refresh');
+    if ($.fn.selectpicker) { $('.selectpicker').selectpicker('refresh'); }
 
     var printRackStockBaseUrl = "{{url('report/rack_stock/print')}}";
-    var rackBaseUrl = "{{url('racks/warehouse')}}";
 
-    $('#print-warehouse-id').on('change', function() {
-        var warehouseId = $(this).val();
+    // Daftar seluruh rak, dikirim dari server. Dipakai untuk membangun ulang
+    // isi dropdown rak setiap kali gudang/toko diganti.
+    var allRackData = @json($lims_rack_all->map(function($r) {
+        return ['id' => $r->id, 'name' => $r->name, 'warehouse_id' => $r->warehouse_id];
+    })->values());
+
+    function buildPrintRackOptions() {
+        var warehouseId = $('#print-warehouse-id').val();
         var $rackSelect = $('#print-rack-id');
-        $rackSelect.html('<option value="">- Semua Rak -</option>');
-        if (!warehouseId) return;
-        $.get(rackBaseUrl + '/' + warehouseId, function(data) {
-            $.each(data, function(i, rack) {
-                $rackSelect.append('<option value="' + rack.id + '">' + rack.name + '</option>');
-            });
-        });
-    });
+        var matched = [];
+
+        // Kalau data rak kosong, biarkan opsi hasil render server apa adanya
+        // supaya dropdown tidak malah jadi kosong.
+        if (!allRackData || !allRackData.length) return;
+
+        for (var i = 0; i < allRackData.length; i++) {
+            if (warehouseId && String(allRackData[i].warehouse_id) === String(warehouseId)) {
+                matched.push(allRackData[i]);
+            }
+        }
+
+        var placeholder = !warehouseId
+            ? '- Pilih gudang/toko dulu -'
+            : (matched.length ? '- Semua Rak -' : '- Belum ada rak untuk gudang/toko ini -');
+
+        $rackSelect.empty();
+        $rackSelect.append($('<option>').val('').text(placeholder));
+        for (var j = 0; j < matched.length; j++) {
+            $rackSelect.append($('<option>').val(matched[j].id).text(matched[j].name));
+        }
+        $rackSelect.val('');
+        if ($rackSelect.hasClass('selectpicker') && $.fn.selectpicker) {
+            $rackSelect.selectpicker('refresh');
+        }
+    }
+
+    $(document).on('change', '#print-warehouse-id', buildPrintRackOptions);
+    $(function() { buildPrintRackOptions(); });
 
     $('#print-rack-stock-btn').on('click', function(e) {
         var warehouseId = $('#print-warehouse-id').val();

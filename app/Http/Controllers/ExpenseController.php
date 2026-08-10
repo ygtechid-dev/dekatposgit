@@ -193,11 +193,9 @@ class ExpenseController extends Controller
         $lims_expense_data = Expense::create($data);
 
         //auto-post journal: record expense (Dr Akun Beban kategori / fallback Beban Operasional, Cr Kas/Bank)
-        try {
-            $beban_id = JournalService::expenseDebitAccountId($lims_expense_data->expense_category_id);
-            $credit_id = JournalService::coaIdForCashAccount($lims_expense_data->account_id);
-            JournalService::postSimple($lims_expense_data->created_at, 'Beban ' . $lims_expense_data->reference_no, $beban_id, $credit_id, $lims_expense_data->amount, 'expense', $lims_expense_data->id);
-        } catch (\Exception $e) {}
+        $journal_error = $this->postExpenseJournal($lims_expense_data);
+        if($journal_error)
+            return redirect('expenses')->with('message', 'Data inserted successfully')->with('not_permitted', 'Pengeluaran tersimpan, tapi jurnal otomatis GAGAL: ' . $journal_error);
 
         return redirect('expenses')->with('message', 'Data inserted successfully');
     }
@@ -227,14 +225,58 @@ class ExpenseController extends Controller
         $lims_expense_data->update($data);
 
         //auto-post journal: reverse old expense entry and repost with updated values
-        try {
-            JournalService::reverseForReference('expense', $lims_expense_data->id);
-            $beban_id = JournalService::expenseDebitAccountId($lims_expense_data->expense_category_id);
-            $credit_id = JournalService::coaIdForCashAccount($lims_expense_data->account_id);
-            JournalService::postSimple($lims_expense_data->created_at, 'Beban ' . $lims_expense_data->reference_no, $beban_id, $credit_id, $lims_expense_data->amount, 'expense', $lims_expense_data->id);
-        } catch (\Exception $e) {}
+        $journal_error = $this->postExpenseJournal($lims_expense_data, true);
+        if($journal_error)
+            return redirect('expenses')->with('message', 'Data updated successfully')->with('not_permitted', 'Pengeluaran tersimpan, tapi jurnal otomatis GAGAL: ' . $journal_error);
 
         return redirect('expenses')->with('message', 'Data updated successfully');
+    }
+
+    /**
+     * Post (or re-post) the double-entry journal for one expense:
+     * Dr Akun Beban milik kategori (fallback 5200 Beban Operasional)
+     * Cr Akun Kas/Bank yang dipakai membayar.
+     *
+     * Returns null on success, or the error message on failure. Failures used
+     * to be swallowed by an empty catch block, which made a missing chart of
+     * account look like "jurnal otomatis tidak jalan" with no clue why.
+     */
+    private function postExpenseJournal($lims_expense_data, $repost = false)
+    {
+        if(!$lims_expense_data)
+            return 'Data pengeluaran tidak ditemukan.';
+
+        try {
+            if($repost)
+                JournalService::reverseForReference('expense', $lims_expense_data->id);
+
+            $beban_id = JournalService::expenseDebitAccountId($lims_expense_data->expense_category_id);
+            $credit_id = JournalService::coaIdForCashAccount($lims_expense_data->account_id);
+            $journal_date = $lims_expense_data->created_at ?: date('Y-m-d H:i:s');
+
+            $journal = JournalService::postSimple(
+                $journal_date,
+                'Beban ' . $lims_expense_data->reference_no,
+                $beban_id,
+                $credit_id,
+                $lims_expense_data->amount,
+                'expense',
+                $lims_expense_data->id
+            );
+
+            if(!$journal)
+                return 'Nominal pengeluaran harus lebih besar dari 0.';
+
+            return null;
+        } catch (\Throwable $e) {
+            \Log::error('Gagal posting jurnal pengeluaran #' . $lims_expense_data->id . ': ' . $e->getMessage(), [
+                'expense_id' => $lims_expense_data->id,
+                'expense_category_id' => $lims_expense_data->expense_category_id,
+                'account_id' => $lims_expense_data->account_id,
+                'amount' => $lims_expense_data->amount,
+            ]);
+            return $e->getMessage();
+        }
     }
 
     public function deleteBySelection(Request $request)
@@ -244,7 +286,9 @@ class ExpenseController extends Controller
             $lims_expense_data = Expense::find($id);
             try {
                 JournalService::reverseForReference('expense', $id);
-            } catch (\Exception $e) {}
+            } catch (\Throwable $e) {
+                \Log::error('Gagal menghapus jurnal pengeluaran #' . $id . ': ' . $e->getMessage());
+            }
             $lims_expense_data->delete();
         }
         return 'Expense deleted successfully!';
@@ -255,7 +299,9 @@ class ExpenseController extends Controller
         $lims_expense_data = Expense::find($id);
         try {
             JournalService::reverseForReference('expense', $id);
-        } catch (\Exception $e) {}
+        } catch (\Throwable $e) {
+            \Log::error('Gagal menghapus jurnal pengeluaran #' . $id . ': ' . $e->getMessage());
+        }
         $lims_expense_data->delete();
         return redirect('expenses')->with('not_permitted', 'Data deleted successfully');
     }

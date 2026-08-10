@@ -34,7 +34,160 @@ use App\Services\JournalService;
 
 class PurchaseController extends Controller
 {
+    use \App\Traits\MoneyInput;
     use TenantInfo, StaffAccess;
+
+    private function normalizeCurrencyInput($value)
+    {
+        if (is_int($value) || is_float($value)) {
+            return (float) $value;
+        }
+        $value = trim((string) $value);
+        if ($value === '') {
+            return 0;
+        }
+        $value = preg_replace('/[^0-9,.-]/', '', $value);
+        if (strpos($value, ',') !== false) {
+            $value = str_replace('.', '', $value);
+            $value = str_replace(',', '.', $value);
+        }
+        elseif (substr_count($value, '.') > 1 || preg_match('/^\d{1,3}(\.\d{3})+$/', $value)) {
+            $value = str_replace('.', '', $value);
+        }
+        return (float) $value;
+    }
+
+    private function purchaseInventoryAccountId($warehouseId)
+    {
+        if (method_exists(JournalService::class, 'inventoryAccountIdForWarehouse')) {
+            return JournalService::inventoryAccountIdForWarehouse($warehouseId);
+        }
+
+        return JournalService::accountIdByCode(JournalService::PERSEDIAAN);
+    }
+
+    private function purchasePayableAccountId($warehouseId)
+    {
+        if (method_exists(JournalService::class, 'payableAccountIdForWarehouse')) {
+            return JournalService::payableAccountIdForWarehouse($warehouseId);
+        }
+
+        return JournalService::accountIdByCode(JournalService::HUTANG_USAHA);
+    }
+
+    /**
+     * Total potongan yang diisi di baris produk (kolom Diskon per item).
+     * Nilai ini sudah ikut mengurangi product_purchases.total -> purchases.total_cost,
+     * jadi kalau ingin Persediaan didebet harga KOTOR, angka ini harus
+     * ditambahkan kembali ke sisi debit dan dimunculkan sebagai baris
+     * "Diskon / Potongan Pembelian" di sisi kredit.
+     */
+    private function purchaseLineDiscountTotal($purchaseId)
+    {
+        $sum = DB::table('product_purchases')->where('purchase_id', $purchaseId)->sum('discount');
+        return (float) $sum;
+    }
+
+    /**
+     * Auto-post journal for a Received purchase as ONE balanced entry.
+     * Persediaan didebet harga KOTOR (sebelum potongan apa pun), setiap
+     * potongan tampil sebagai baris kredit tersendiri, dan Hutang Gudang
+     * dikredit sebesar nilai bersih yang benar-benar terhutang:
+     *
+     *   Dr Persediaan Gudang        = total_cost + diskon_baris + order_tax
+     *   Dr Biaya Kirim Pembelian    = shipping_cost                (kalau ada)
+     *   Cr Diskon/Potongan Pembelian = diskon_baris + order_discount (kalau ada)
+     *   Cr Hutang Gudang            = grand_total
+     *
+     * Contoh: kertas 30.000 x 10 pak, potongan 10.000
+     *   Dr Persediaan Gudang      300.000
+     *      Cr Diskon Pembelian      10.000
+     *      Cr Hutang Gudang        290.000
+     *
+     * Selalu seimbang secara aljabar karena
+     * grand_total = total_cost + order_tax + shipping_cost - order_discount,
+     * dan diskon_baris muncul di kedua sisi.
+     */
+    private function postPurchaseJournal($lims_purchase_data)
+    {
+        if ((int)$lims_purchase_data->status !== 1) {
+            return;
+        }
+
+        $persediaan_id = $this->purchaseInventoryAccountId($lims_purchase_data->warehouse_id);
+        $hutang_id = $this->purchasePayableAccountId($lims_purchase_data->warehouse_id);
+        // ensureAccountByCode (bukan accountIdByCode): kalau akun 5410/5210
+        // belum ada di Bagan Akun - misalnya SQL-nya belum dijalankan di server -
+        // akunnya dibuat otomatis. Sebelumnya akun yang hilang membuat baris
+        // kredit "Diskon Pembelian" DIBUANG diam-diam sementara sisi debit tetap
+        // memakai harga kotor, sehingga jurnal jadi tidak seimbang persis
+        // sebesar nilai diskon (contoh: debit 455.000 vs kredit 450.000).
+        $diskon_id = JournalService::ensureAccountByCode(
+            JournalService::DISKON_PEMBELIAN, 'Diskon / Potongan Pembelian', 'expense', 'credit', JournalService::BEBAN_OPERASIONAL
+        );
+        $kirim_id = JournalService::ensureAccountByCode(
+            JournalService::BIAYA_KIRIM_PEMBELIAN, 'Biaya Kirim Pembelian', 'expense', 'debit', JournalService::BEBAN_OPERASIONAL
+        );
+
+        $shipping = (float) $lims_purchase_data->shipping_cost;
+        $orderDiscount = (float) $lims_purchase_data->order_discount;
+        $lineDiscount = $this->purchaseLineDiscountTotal($lims_purchase_data->id);
+        $grandTotal = (float) $lims_purchase_data->grand_total;
+
+        // Nilai barang KOTOR: total_cost sudah bersih dari diskon per baris,
+        // jadi diskon baris dikembalikan supaya Persediaan mencerminkan
+        // harga beli sebelum potongan.
+        $goodsValue = (float) $lims_purchase_data->total_cost + (float) $lims_purchase_data->order_tax;
+        if ($diskon_id) {
+            $goodsValue += $lineDiscount;
+        }
+
+        // Diskon dihitung sebagai SELISIH, bukan dibaca langsung dari kolom.
+        // Secara data yang konsisten hasilnya sama dengan
+        // (order_discount + diskon_baris), tapi kalau grand_total di database
+        // ternyata tidak persis sama dengan komponennya (pembulatan, angka
+        // lama, edit manual), baris diskon otomatis menyerap selisihnya
+        // sehingga jurnal TIDAK PERNAH gagal karena tidak seimbang -
+        // Hutang tetap dikredit sebesar grand_total yang benar-benar terhutang.
+        $totalDiscount = round($goodsValue + $shipping - $grandTotal, 2);
+
+        $description = 'Pembelian ' . $lims_purchase_data->reference_no;
+
+        $lines = [
+            ['chart_of_account_id' => $persediaan_id, 'debit' => $goodsValue, 'credit' => 0, 'note' => $description],
+        ];
+        if ($shipping > 0 && $kirim_id) {
+            $lines[] = ['chart_of_account_id' => $kirim_id, 'debit' => $shipping, 'credit' => 0, 'note' => $description];
+        }
+        elseif ($shipping > 0) {
+            // Fallback so the entry still balances if the Biaya Kirim account
+            // is missing for some reason (e.g. SQL/migration not yet run).
+            $lines[0]['debit'] += $shipping;
+        }
+        if ($totalDiscount > 0 && $diskon_id) {
+            $lines[] = ['chart_of_account_id' => $diskon_id, 'debit' => 0, 'credit' => $totalDiscount, 'note' => $description];
+        }
+        elseif ($totalDiscount != 0) {
+            // Tidak ada akun diskon (atau nilainya negatif / biaya tambahan):
+            // sesuaikan sisi Persediaan supaya entri tetap seimbang.
+            $lines[0]['debit'] -= $totalDiscount;
+        }
+        $lines[] = ['chart_of_account_id' => $hutang_id, 'debit' => 0, 'credit' => $grandTotal, 'note' => $description];
+
+        try {
+            JournalService::post($lims_purchase_data->created_at, $description, $lines, 'purchase', $lims_purchase_data->id);
+        } catch (\Throwable $e) {
+            \Log::error('Gagal posting jurnal pembelian #' . $lims_purchase_data->id . ': ' . $e->getMessage(), [
+                'purchase_id' => $lims_purchase_data->id,
+                'total_cost' => $lims_purchase_data->total_cost,
+                'order_discount' => $orderDiscount,
+                'line_discount' => $lineDiscount,
+                'shipping_cost' => $shipping,
+                'grand_total' => $lims_purchase_data->grand_total,
+            ]);
+            session()->flash('not_permitted', 'Pembelian tersimpan, tapi jurnal otomatis GAGAL: ' . $e->getMessage());
+        }
+    }
 
     public function index(Request $request)
     {
@@ -87,11 +240,17 @@ class PurchaseController extends Controller
 
     public function purchaseData(Request $request)
     {
+        // Column indices must match resources/views/backend/purchase/index.blade.php's
+        // <thead> order (0 = checkbox, 1 = Date, 2 = reference, 3 = Supplier,
+        // 4 = Purchase Status, 5 = grand total, 6 = Returned Amount, 7 = Paid,
+        // 8 = Due, 9 = Payment Status). "paid_amount" was mapped to index 6
+        // (actually Returned Amount) instead of 7 (Paid) - fixed, plus a safe
+        // fallback below for any other index not covered here.
         $columns = array(
             1 => 'created_at',
             2 => 'reference_no',
             5 => 'grand_total',
-            6 => 'paid_amount',
+            7 => 'paid_amount',
         );
 
         $warehouse_id = $request->input('warehouse_id');
@@ -116,7 +275,7 @@ class PurchaseController extends Controller
         else
             $limit = $totalData;
         $start = $request->input('start');
-        $order = $columns[$request->input('order.0.column')];
+        $order = $columns[$request->input('order.0.column')] ?? 'created_at';
         $dir = $request->input('order.0.dir');
         //fetching custom fields data
         $custom_fields = CustomField::where([
@@ -468,6 +627,9 @@ class PurchaseController extends Controller
     public function store(Request $request)
     {
         $data = $request->except('document');
+        // Jaring pengaman: angka bisa datang dalam format tampilan "50.000,00".
+        // Tanpa ini (float)"50.000,00" dibaca PHP sebagai 50 -> total mengecil 1000x.
+        $data = $this->normalizeMoneyInput($data);
         //return dd($data);
         $data['user_id'] = Auth::id();
         $data['reference_no'] = 'pr-' . date("Ymd") . '-'. date("his");
@@ -672,12 +834,8 @@ class PurchaseController extends Controller
             return redirect()->back()->withInput()->with('not_permitted', 'Gagal menyimpan pembelian: ' . $e->getMessage());
         }
 
-        //auto-post journal: recognize purchase (Dr Persediaan, Cr Hutang Usaha)
-        try {
-            $persediaan_id = JournalService::accountIdByCode(JournalService::PERSEDIAAN);
-            $hutang_id = JournalService::accountIdByCode(JournalService::HUTANG_USAHA);
-            JournalService::postSimple($lims_purchase_data->created_at, 'Pembelian ' . $lims_purchase_data->reference_no, $persediaan_id, $hutang_id, $lims_purchase_data->grand_total, 'purchase', $lims_purchase_data->id);
-        } catch (\Exception $e) {}
+        //auto-post journal only for Received purchase: Dr Persediaan Gudang (+Biaya Kirim) / Cr Diskon Pembelian + Hutang Gudang
+        $this->postPurchaseJournal($lims_purchase_data);
 
         return redirect('purchases')->with('message', 'Purchase created successfully');
     }
@@ -870,12 +1028,8 @@ class PurchaseController extends Controller
         $lims_purchase_data->grand_total = ($lims_purchase_data->total_cost + $lims_purchase_data->order_tax + $lims_purchase_data->shipping_cost) - $lims_purchase_data->order_discount;
         $lims_purchase_data->save();
 
-        //auto-post journal: recognize purchase (Dr Persediaan, Cr Hutang Usaha)
-        try {
-            $persediaan_id = JournalService::accountIdByCode(JournalService::PERSEDIAAN);
-            $hutang_id = JournalService::accountIdByCode(JournalService::HUTANG_USAHA);
-            JournalService::postSimple($lims_purchase_data->created_at, 'Pembelian ' . $lims_purchase_data->reference_no, $persediaan_id, $hutang_id, $lims_purchase_data->grand_total, 'purchase', $lims_purchase_data->id);
-        } catch (\Exception $e) {}
+        //auto-post journal only for Received purchase: Dr Persediaan Gudang (+Biaya Kirim) / Cr Diskon Pembelian + Hutang Gudang
+        $this->postPurchaseJournal($lims_purchase_data);
 
         return redirect('purchases');
     }
@@ -930,6 +1084,9 @@ class PurchaseController extends Controller
     {
         $lims_purchase_data = Purchase::find($id);
         $data = $request->except('document');
+        // Jaring pengaman: angka bisa datang dalam format tampilan "50.000,00".
+        // Tanpa ini (float)"50.000,00" dibaca PHP sebagai 50 -> total mengecil 1000x.
+        $data = $this->normalizeMoneyInput($data);
         $document = $request->document;
         if ($document) {
             $v = Validator::make(
@@ -1170,14 +1327,18 @@ class PurchaseController extends Controller
         }
         $lims_purchase_data->update($data);
 
-        // Jurnal otomatis: edit pembelian (ubah item/harga) bisa mengubah
-        // grand_total, jadi jurnal 'purchase' lama dihapus lalu diposting
-        // ulang dengan angka terbaru - sama seperti alur di store().
+        // Jurnal otomatis hanya untuk pembelian Received. Pending/Ordered tidak
+        // boleh mempengaruhi posisi keuangan.
         try {
             JournalService::reverseForReference('purchase', $lims_purchase_data->id);
-            $persediaan_id = JournalService::accountIdByCode(JournalService::PERSEDIAAN);
-            $hutang_id = JournalService::accountIdByCode(JournalService::HUTANG_USAHA);
-            JournalService::postSimple($lims_purchase_data->created_at, 'Pembelian ' . $lims_purchase_data->reference_no, $persediaan_id, $hutang_id, $lims_purchase_data->grand_total, 'purchase', $lims_purchase_data->id);
+            if((int)$lims_purchase_data->status === 1) {
+                $this->postPurchaseJournal($lims_purchase_data);
+            }
+            else {
+                Payment::where('purchase_id', $lims_purchase_data->id)->get()->each(function($payment) {
+                    JournalService::reverseForReference('purchase_payment', $payment->id);
+                });
+            }
         } catch (\Exception $e) {
             // Jangan sampai kegagalan posting jurnal membatalkan update purchase itu sendiri.
         }
@@ -1201,7 +1362,18 @@ class PurchaseController extends Controller
     public function addPayment(Request $request)
     {
         $data = $request->all();
+        $data['amount'] = $this->normalizeCurrencyInput($data['amount'] ?? 0);
+        $data['paying_amount'] = $this->normalizeCurrencyInput($data['paying_amount'] ?? 0);
+        $data['balance'] = $this->normalizeCurrencyInput($data['balance'] ?? 0);
         $lims_purchase_data = Purchase::find($data['purchase_id']);
+        if(!$lims_purchase_data || (int)$lims_purchase_data->status !== 1) {
+            return redirect()->back()->with('not_permitted', 'Pembayaran hanya bisa dilakukan untuk pembelian berstatus Received/Diterima.');
+        }
+        $cash_balance = JournalService::cashAccountBalance($data['account_id'] ?? null);
+        if($cash_balance + 0.00001 < $data['amount']) {
+            return redirect()->back()->with('not_permitted', 'Saldo akun pembayaran tidak mencukupi. Saldo tersedia: ' . number_format($cash_balance, config('decimal'), ',', '.'));
+        }
+
         $lims_purchase_data->paid_amount += $data['amount'];
         $balance = $lims_purchase_data->grand_total - $lims_purchase_data->paid_amount;
         if($balance > 0 || $balance < 0)
@@ -1232,7 +1404,7 @@ class PurchaseController extends Controller
 
         //auto-post journal: pay off purchase payable (Dr Hutang Usaha, Cr Kas/Bank)
         try {
-            $hutang_id = JournalService::accountIdByCode(JournalService::HUTANG_USAHA);
+            $hutang_id = $this->purchasePayableAccountId($lims_purchase_data->warehouse_id);
             $credit_id = JournalService::coaIdForCashAccount($lims_payment_data->account_id);
             JournalService::postSimple(now(), 'Pembayaran pembelian ' . $lims_payment_data->payment_reference, $hutang_id, $credit_id, $lims_payment_data->amount, 'purchase_payment', $lims_payment_data->id);
         } catch (\Exception $e) {}
@@ -1319,8 +1491,20 @@ class PurchaseController extends Controller
     public function updatePayment(Request $request)
     {
         $data = $request->all();
+        $data['edit_amount'] = $this->normalizeCurrencyInput($data['edit_amount'] ?? 0);
+        $data['edit_paying_amount'] = $this->normalizeCurrencyInput($data['edit_paying_amount'] ?? 0);
         $lims_payment_data = Payment::find($data['payment_id']);
         $lims_purchase_data = Purchase::find($lims_payment_data->purchase_id);
+        if(!$lims_purchase_data || (int)$lims_purchase_data->status !== 1) {
+            return redirect()->back()->with('not_permitted', 'Pembayaran hanya bisa dilakukan untuk pembelian berstatus Received/Diterima.');
+        }
+        $available_balance = JournalService::cashAccountBalance($data['account_id'] ?? null);
+        if((int)($data['account_id'] ?? 0) === (int)$lims_payment_data->account_id) {
+            $available_balance += (float)$lims_payment_data->amount;
+        }
+        if($available_balance + 0.00001 < $data['edit_amount']) {
+            return redirect()->back()->with('not_permitted', 'Saldo akun pembayaran tidak mencukupi. Saldo tersedia: ' . number_format($available_balance, config('decimal'), ',', '.'));
+        }
         //updating purchase table
         $amount_dif = $lims_payment_data->amount - $data['edit_amount'];
         $lims_purchase_data->paid_amount = $lims_purchase_data->paid_amount - $amount_dif;
@@ -1392,7 +1576,7 @@ class PurchaseController extends Controller
         //auto-post journal: reverse old payment entry and repost with updated values
         try {
             JournalService::reverseForReference('purchase_payment', $lims_payment_data->id);
-            $hutang_id = JournalService::accountIdByCode(JournalService::HUTANG_USAHA);
+            $hutang_id = $this->purchasePayableAccountId($lims_purchase_data->warehouse_id);
             $credit_id = JournalService::coaIdForCashAccount($lims_payment_data->account_id);
             JournalService::postSimple(now(), 'Update pembayaran pembelian ' . $lims_payment_data->payment_reference, $hutang_id, $credit_id, $lims_payment_data->amount, 'purchase_payment', $lims_payment_data->id);
         } catch (\Exception $e) {}
@@ -1602,6 +1786,9 @@ class PurchaseController extends Controller
     public function updateFromClient(Request $request, $id)
     {
         $data = $request->except('document');
+        // Jaring pengaman: angka bisa datang dalam format tampilan "50.000,00".
+        // Tanpa ini (float)"50.000,00" dibaca PHP sebagai 50 -> total mengecil 1000x.
+        $data = $this->normalizeMoneyInput($data);
         $document = $request->document;
         if ($document) {
             $v = Validator::make(

@@ -3,6 +3,7 @@
 <section class="forms">
     <div class="container-fluid">
         <h3>Buku Besar</h3>
+        <button type="button" id="print-ledger-page" class="btn btn-info mb-3"><i class="fa fa-print"></i> Print Buku Besar</button>
     </div>
     {!! Form::open(['route' => 'accounts.generalledger', 'method' => 'get']) !!}
     <div class="row mb-3">
@@ -71,6 +72,10 @@
     $("ul#account").siblings('a').attr('aria-expanded','true');
     $("ul#account").addClass("show");
     $("ul#account #general-ledger-menu").addClass("active");
+
+    $('#print-ledger-page').on('click', function() {
+        window.print();
+    });
 
     $('.ledger-table').each(function() {
         $(this).DataTable( {

@@ -64,9 +64,18 @@
                             <td class="text-right">{{number_format((float)$liability['amount'], $general_setting->decimal, ',', '.')}}</td>
                         </tr>
                         @endforeach
+                        <tr class="active">
+                            <th colspan="2">Modal / Ekuitas</th>
+                        </tr>
+                        @foreach($equity_items as $equity_item)
                         <tr>
-                            <td>Modal / Ekuitas</td>
-                            <td class="text-right">{{number_format((float)$equity, $general_setting->decimal, ',', '.')}}</td>
+                            <td>{{$equity_item['name']}}</td>
+                            <td class="text-right">{{number_format((float)$equity_item['amount'], $general_setting->decimal, ',', '.')}}</td>
+                        </tr>
+                        @endforeach
+                        <tr>
+                            <th>Total Modal / Ekuitas</th>
+                            <th class="text-right">{{number_format((float)$equity, $general_setting->decimal, ',', '.')}}</th>
                         </tr>
                     </tbody>
                     <tfoot class="tfoot active">
@@ -89,8 +98,8 @@
                 <tr>
                     <th>Kode Akun</th>
                     <th>{{trans('file.name')}}</th>
-                    <th>{{trans('file.Credit')}}</th>
                     <th>{{trans('file.Debit')}}</th>
+                    <th>{{trans('file.Credit')}}</th>
                     <th>{{trans('file.Balance')}}</th>
                 </tr>
             </thead>
@@ -99,9 +108,9 @@
                 <tr>
                     <td>{{ $account->coa_label_code }}</td>
                     <td>{{ $account->coa_label_name }}</td>
-                    <td>{{number_format((float)$credit[$key], $general_setting->decimal, ',', '.')}}</td>
-                    <td>{{number_format((float)($debit[$key] * -1), $general_setting->decimal, ',', '.')}}</td>
-                    <td>{{number_format((float)($credit[$key] - $debit[$key]), $general_setting->decimal, ',', '.')}}</td>
+                    <td>{{number_format((float)$account_debit[$key], $general_setting->decimal, ',', '.')}}</td>
+                    <td>{{number_format((float)$account_credit[$key], $general_setting->decimal, ',', '.')}}</td>
+                    <td>{{number_format((float)$account_balance[$key], $general_setting->decimal, ',', '.')}}</td>
                 </tr>
                 @endforeach
             </tbody>

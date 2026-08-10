@@ -30,6 +30,26 @@ class CustomerController extends Controller
     use \App\Traits\CacheForget;
     use \App\Traits\MailInfo;
 
+    private function normalizeCurrencyInput($value)
+    {
+        if (is_int($value) || is_float($value)) {
+            return (float) $value;
+        }
+        $value = trim((string) $value);
+        if ($value === '') {
+            return 0;
+        }
+        $value = preg_replace('/[^0-9,.-]/', '', $value);
+        if (strpos($value, ',') !== false) {
+            $value = str_replace('.', '', $value);
+            $value = str_replace(',', '.', $value);
+        }
+        elseif (substr_count($value, '.') > 1 || preg_match('/^\d{1,3}(\.\d{3})+$/', $value)) {
+            $value = str_replace('.', '', $value);
+        }
+        return (float) $value;
+    }
+
     public function index()
     {
         $role = Role::find(Auth::user()->role_id);
@@ -52,6 +72,10 @@ class CustomerController extends Controller
 
     public function clearDue(Request $request)
     {
+        $request->merge([
+            'amount' => $this->normalizeCurrencyInput($request->input('amount')),
+        ]);
+
         $request->validate([
             'customer_id' => 'required',
             'amount' => 'required|numeric|min:0.01',
@@ -107,7 +131,9 @@ class CustomerController extends Controller
 
             // Jurnal otomatis: pembayaran piutang -> Dr Kas / Cr Piutang Usaha
             // (sama seperti pembayaran per-invoice biasa di SaleController).
-            JournalService::postSimple(now(), 'Pembayaran piutang ' . $sale_data->id, $kas_id, $piutang_id, $paid_amount, 'sale_payment', $lims_payment_data->id);
+            try {
+                JournalService::postSimple(now(), 'Pembayaran piutang ' . $sale_data->id, $kas_id, $piutang_id, $paid_amount, 'sale_payment', $lims_payment_data->id);
+            } catch (\Exception $e) {}
         }
         return redirect()->back()->with('message', 'Due cleared successfully');
     }

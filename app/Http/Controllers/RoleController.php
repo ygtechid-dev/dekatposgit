@@ -308,6 +308,21 @@ class RoleController extends Controller
         else
             $role->revokePermissionTo('sale-payment-delete');
 
+        // Kasir / Cash Register.
+        // Permission ini baru, jadi belum tentu ada di tabel permissions milik server.
+        // firstOrCreate dipanggil lebih dulu di luar if/else: kalau tidak,
+        // revokePermissionTo() pada permission yang belum ada akan melempar
+        // PermissionDoesNotExist dan seluruh form izin gagal disimpan.
+        foreach (['cash_register-index', 'cash_register-add', 'cash_register-edit', 'cash_register-delete'] as $cash_register_permission) {
+            $permission = Permission::firstOrCreate(['name' => $cash_register_permission]);
+            if($request->has($cash_register_permission)) {
+                if(!$role->hasPermissionTo($permission))
+                    $role->givePermissionTo($permission);
+            }
+            else
+                $role->revokePermissionTo($permission);
+        }
+
         if($request->has('expenses-index')){
             $permission = Permission::firstOrCreate(['name' => 'expenses-index']);
             if(!$role->hasPermissionTo('expenses-index')){
@@ -1256,7 +1271,14 @@ class RoleController extends Controller
                 $role->revokePermissionTo('custom_field');
         }
 
+        // Sidebar & pengecekan menu membaca cache berumur 1 tahun yang di-set di
+        // middleware Common. Tanpa forget di bawah ini, izin yang baru disimpan
+        // tidak kelihatan sampai cache kedaluwarsa — inilah sebabnya perubahan
+        // izin sering terasa "tidak tersimpan".
         cache()->forget('permissions');
+        cache()->forget('role_has_permissions');
+        cache()->forget('role_has_permissions_list' . $request['role_id']);
+        app(\Spatie\Permission\PermissionRegistrar::class)->forgetCachedPermissions();
 
         return redirect('role')->with('message', 'Permission updated successfully');
     }

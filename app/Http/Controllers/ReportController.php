@@ -213,11 +213,26 @@ class ReportController extends Controller
         if (!$role->hasPermissionTo('warehouse-stock-report'))
             return redirect()->back()->with('not_permitted', 'Sorry! You are not allowed to access this module');
 
-        $toko_warehouse_ids = Warehouse::where(['is_active' => true, 'type' => 'toko'])->pluck('id');
-        $gudang_warehouse_ids = Warehouse::where(['is_active' => true, 'type' => 'gudang'])->pluck('id');
+        $toko_warehouse_ids = Warehouse::where('is_active', true)->where('type', 'toko')->pluck('id');
+        // Semua gudang yang bukan bertipe 'toko' dihitung sebagai gudang, termasuk yang
+        // kolom type-nya masih kosong/NULL. Kalau tidak, raknya tidak muncul sama sekali
+        // di dropdown dan tidak bisa dipilih.
+        $gudang_warehouse_ids = Warehouse::where('is_active', true)
+            ->where(function ($q) {
+                $q->where('type', '!=', 'toko')->orWhereNull('type');
+            })->pluck('id');
 
-        $lims_rack_toko_list = Rack::whereIn('warehouse_id', $toko_warehouse_ids)->where('is_active', true)->get();
-        $lims_rack_gudang_list = Rack::whereIn('warehouse_id', $gudang_warehouse_ids)->where('is_active', true)->get();
+        // is_active bisa NULL untuk rak lama -> jangan sampai tersaring keluar.
+        $activeRack = function ($q) {
+            $q->where('is_active', true)->orWhereNull('is_active');
+        };
+
+        $lims_rack_toko_list = Rack::with('warehouse')->whereIn('warehouse_id', $toko_warehouse_ids)
+            ->where($activeRack)->orderBy('warehouse_id')->orderBy('name')->get();
+        $lims_rack_gudang_list = Rack::with('warehouse')->whereIn('warehouse_id', $gudang_warehouse_ids)
+            ->where($activeRack)->orderBy('warehouse_id')->orderBy('name')->get();
+        // Dipakai dropdown rak pada bagian cetak stok opname (tanpa AJAX).
+        $lims_rack_all = Rack::with('warehouse')->where($activeRack)->orderBy('warehouse_id')->orderBy('name')->get();
 
         $rak_toko_filter = $request->input('rak_toko');
         $rak_gudang_filter = $request->input('rak_gudang');
@@ -265,7 +280,7 @@ class ReportController extends Controller
 
         $lims_product_data = $query->orderBy('products.name')->get();
 
-        return view('backend.report.rack_stock', compact('lims_product_data', 'lims_rack_toko_list', 'lims_rack_gudang_list', 'rak_toko_filter', 'rak_gudang_filter'));
+        return view('backend.report.rack_stock', compact('lims_product_data', 'lims_rack_toko_list', 'lims_rack_gudang_list', 'lims_rack_all', 'rak_toko_filter', 'rak_gudang_filter'));
     }
 
     /**

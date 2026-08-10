@@ -2384,7 +2384,7 @@ $('input[name="paid_amount"]').on("input", function() {
         alert('Paying amount cannot be bigger than recieved amount');
         $(this).val('');
     }
-    else if( $(this).val() > parseFloat($('#grand-total').text()) ){
+    else if( $(this).val() > parseLocalizedNumber($('#grand-total').text()) ){
         alert('Paying amount cannot be bigger than grand total');
         $(this).val('');
     }
@@ -2795,7 +2795,7 @@ function calculateTotal() {
     //Sum of subtotal
     var total = 0;
     $(".sub-total").each(function() {
-        total += parseFloat($(this).text());
+        total += parseLocalizedNumber($(this).text());
     });
     $('input[name="total_price"]').val(total.toFixed({{$general_setting->decimal}}));
 

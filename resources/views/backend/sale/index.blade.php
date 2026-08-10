@@ -631,7 +631,9 @@
         deposit = $('table.sale-list tbody tr:nth-child(' + (rowindex + 1) + ')').find('.deposit').val();
         var sale_id = $(this).data('id').toString();
         var balance = $('table.sale-list tbody tr:nth-child(' + (rowindex + 1) + ')').find('td:nth-child(12)').text();
-        balance = parseFloat(balance.replace(/,/g, ''));
+        // Kolom sisa piutang tampil sebagai "36.000,00". replace(/,/g,'') + parseFloat
+        // menghasilkan 36 (bukan 36000), jadi pakai parser lokal yang sama dengan halaman lain.
+        balance = parseLocalizedNumber(balance);
         $('input[name="paying_amount"]').val(balance);
         $('#add-payment input[name="balance"]').val(balance);
         $('input[name="amount"]').val(balance);
@@ -767,7 +769,7 @@
             $(".gift-card").hide();
             $("#cheque").hide();
             if(id == 6){
-                if($('#add-payment input[name="amount"]').val() > parseFloat(deposit))
+                if(parseLocalizedNumber($('#add-payment input[name="amount"]').val()) > parseLocalizedNumber(deposit))
                     alert('Amount exceeds customer deposit! Customer deposit : ' + deposit);
             }
             else if(id==7) {
@@ -786,28 +788,28 @@
     });
 
     $('input[name="paying_amount"]').on("input", function() {
-        $(".change").text(parseFloat( $(this).val() - $('input[name="amount"]').val() ).toFixed({{$general_setting->decimal}}));
+        $(".change").text(parseFloat( parseLocalizedNumber($(this).val()) - parseLocalizedNumber($('input[name="amount"]').val()) ).toFixed({{$general_setting->decimal}}));
     });
 
     $('input[name="amount"]').on("input", function() {
-        if( $(this).val() > parseFloat($('input[name="paying_amount"]').val()) ) {
+        if( parseLocalizedNumber($(this).val()) > parseLocalizedNumber($('input[name="paying_amount"]').val()) ) {
             alert('Paying amount cannot be bigger than recieved amount');
             $(this).val('');
         }
-        else if( $(this).val() > parseFloat($('input[name="balance"]').val()) ) {
+        else if( parseLocalizedNumber($(this).val()) > parseLocalizedNumber($('input[name="balance"]').val()) ) {
             alert('Paying amount cannot be bigger than due amount');
             $(this).val('');
         }
-        $(".change").text(parseFloat($('input[name="paying_amount"]').val() - $(this).val()).toFixed({{$general_setting->decimal}}));
+        $(".change").text(parseFloat(parseLocalizedNumber($('input[name="paying_amount"]').val()) - parseLocalizedNumber($(this).val())).toFixed({{$general_setting->decimal}}));
         var id = $('#add-payment select[name="paid_by_id"]').val();
-        var amount = $(this).val();
+        var amount = parseLocalizedNumber($(this).val());
         if(id == 2){
             id = $('#add-payment select[name="gift_card_id"]').val();
             if(amount > balance[id])
                 alert('Amount exceeds card balance! Gift Card balance: '+ balance[id]);
         }
         else if(id == 6){
-            if(amount > parseFloat(deposit))
+            if(amount > parseLocalizedNumber(deposit))
                 alert('Amount exceeds customer deposit! Customer deposit : ' + deposit);
         }
         else if(id==7) {
@@ -844,7 +846,7 @@
             $("#edit-cheque").hide();
             $('.gift-card').hide();
             if(id == 6) {
-                if($('input[name="edit_amount"]').val() > parseFloat(deposit))
+                if(parseLocalizedNumber($('input[name="edit_amount"]').val()) > parseLocalizedNumber(deposit))
                     alert('Amount exceeds customer deposit! Customer deposit : ' + deposit);
             }
             else if(id==7) {
@@ -862,23 +864,23 @@
     });
 
     $('input[name="edit_paying_amount"]').on("input", function() {
-        $(".change").text(parseFloat( $(this).val() - $('input[name="edit_amount"]').val() ).toFixed({{$general_setting->decimal}}));
+        $(".change").text(parseFloat( parseLocalizedNumber($(this).val()) - parseLocalizedNumber($('input[name="edit_amount"]').val()) ).toFixed({{$general_setting->decimal}}));
     });
 
     $('input[name="edit_amount"]').on("input", function() {
-        if( $(this).val() > parseFloat($('input[name="edit_paying_amount"]').val()) ) {
+        if( parseLocalizedNumber($(this).val()) > parseLocalizedNumber($('input[name="edit_paying_amount"]').val()) ) {
             alert('Paying amount cannot be bigger than recieved amount');
             $(this).val('');
         }
-        $(".change").text(parseFloat($('input[name="edit_paying_amount"]').val() - $(this).val()).toFixed({{$general_setting->decimal}}));
-        var amount = $(this).val();
+        $(".change").text(parseFloat(parseLocalizedNumber($('input[name="edit_paying_amount"]').val()) - parseLocalizedNumber($(this).val())).toFixed({{$general_setting->decimal}}));
+        var amount = parseLocalizedNumber($(this).val());
         var id = $('#edit-payment select[name="gift_card_id"]').val();
         if(amount > balance[id]){
             alert('Amount exceeds card balance! Gift Card balance: '+ balance[id]);
         }
         var id = $('#edit-payment select[name="edit_paid_by_id"]').val();
         if(id == 6){
-            if(amount > parseFloat(deposit))
+            if(amount > parseLocalizedNumber(deposit))
                 alert('Amount exceeds customer deposit! Customer deposit : ' + deposit);
         }
         else if(id==7) {
@@ -1206,16 +1208,16 @@
     }
 
     $(document).on('submit', '.payment-form', function(e) {
-        if( $('input[name="paying_amount"]').val() < parseFloat($('#amount').val()) ) {
+        if( parseLocalizedNumber($('input[name="paying_amount"]').val()) < parseLocalizedNumber($('#amount').val()) ) {
             alert('Paying amount cannot be bigger than recieved amount');
             $('input[name="amount"]').val('');
-            $(".change").text(parseFloat( $('input[name="paying_amount"]').val() - $('#amount').val() ).toFixed({{$general_setting->decimal}}));
+            $(".change").text(parseFloat( parseLocalizedNumber($('input[name="paying_amount"]').val()) - parseLocalizedNumber($('#amount').val()) ).toFixed({{$general_setting->decimal}}));
             e.preventDefault();
         }
-        else if( $('input[name="edit_paying_amount"]').val() < parseFloat($('input[name="edit_amount"]').val()) ) {
+        else if( parseLocalizedNumber($('input[name="edit_paying_amount"]').val()) < parseLocalizedNumber($('input[name="edit_amount"]').val()) ) {
             alert('Paying amount cannot be bigger than recieved amount');
             $('input[name="edit_amount"]').val('');
-            $(".change").text(parseFloat( $('input[name="edit_paying_amount"]').val() - $('input[name="edit_amount"]').val() ).toFixed({{$general_setting->decimal}}));
+            $(".change").text(parseFloat( parseLocalizedNumber($('input[name="edit_paying_amount"]').val()) - parseLocalizedNumber($('input[name="edit_amount"]').val()) ).toFixed({{$general_setting->decimal}}));
             e.preventDefault();
         }
 

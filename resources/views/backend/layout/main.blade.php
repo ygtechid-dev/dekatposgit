@@ -1068,6 +1068,83 @@
   <script type="text/javascript" src="https://cdn.datatables.net/responsive/2.2.3/js/responsive.bootstrap.min.js"></script>
   @endif
   @endif
+  <script type="text/javascript">
+    /*
+     * parseLocalizedNumber(): pengganti parseFloat() untuk angka yang sudah
+     * diformat lokal.
+     *
+     * Banyak halaman merender angka dari server dengan number_format(...,',','.')
+     * sehingga di DOM tertulis "50.000,00". parseFloat("50.000,00") mengembalikan
+     * 50 - bukan 50000 - karena parseFloat berhenti di titik ribuan yang kedua.
+     * Akibatnya perhitungan ulang di halaman edit (grand total, subtotal, dll)
+     * mengecil 1000x dan nilai salah itu ikut tersimpan ke database.
+     *
+     * Fungsi ini menangani ketiga bentuk yang bisa muncul di DOM:
+     *   "50.000,00" / "1.234.567"  -> titik = pemisah ribuan, koma = desimal
+     *   "50000.00"                 -> format mentah dari toFixed()
+     *   "Rp 50.000"                -> simbol/spasi diabaikan
+     */
+    window.parseLocalizedNumber = function(value) {
+      if (typeof value === 'number') {
+        return isNaN(value) ? 0 : value;
+      }
+      value = String(value === null || typeof value === 'undefined' ? '' : value)
+                .replace(/[^\d,.-]/g, '')
+                .trim();
+      if (!value) {
+        return 0;
+      }
+      if (value.indexOf(',') !== -1) {
+        // Ada koma -> koma pasti desimal, titik pasti ribuan. "50.000,00" -> "50000.00"
+        value = value.replace(/\./g, '').replace(',', '.');
+      }
+      else if ((value.match(/\./g) || []).length > 1 || /^-?\d{1,3}(\.\d{3})+$/.test(value)) {
+        // Tanpa koma, tapi polanya ribuan: "1.234.567" atau "50.000" -> buang titik.
+        // "50000.00" (satu titik, 2 digit di belakang) tidak kena aturan ini.
+        value = value.replace(/\./g, '');
+      }
+      var parsed = parseFloat(value);
+      return isNaN(parsed) ? 0 : parsed;
+    };
+
+    /*
+     * formatLocalizedNumber(): kebalikan dari parseLocalizedNumber().
+     * 1234567.5 -> "1.234.567,50" supaya angka total di footer tabel tampil
+     * dengan format yang sama persis dengan angka di barisnya.
+     */
+    window.formatLocalizedNumber = function(value, decimals) {
+      var n = window.parseLocalizedNumber(value);
+      decimals = (typeof decimals === 'undefined') ? {{ $general_setting->decimal ?? 2 }} : decimals;
+      var negative = n < 0;
+      var fixed = Math.abs(n).toFixed(decimals);
+      var parts = fixed.split('.');
+      parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+      return (negative ? '-' : '') + (parts.length > 1 ? parts[0] + ',' + parts[1] : parts[0]);
+    };
+
+    /*
+     * Re-register DataTables' sum() plug-in INLINE.
+     *
+     * vendor/datatable/sum().js sudah diperbaiki, tapi file itu statis dan
+     * di-cache keras oleh browser + service worker, jadi di banyak instalasi
+     * yang jalan masih versi lama yang memakai
+     * `.replace(/[^\d.-]/g,'') * 1`. Versi lama itu membaca "260,00" sebagai
+     * 26000 (koma dibuang, bukan dianggap desimal), sehingga total di footer
+     * tabel bisa 100x atau 1000x lebih besar dari jumlah barisnya.
+     *
+     * Karena blok ini di-render server-side di setiap request, ia tidak
+     * pernah basi. Ia dijalankan SETELAH sum().js dimuat sehingga
+     * registrasi di sini yang menang, dan perbaikannya otomatis berlaku di
+     * semua halaman yang memakai .sum() untuk total footer.
+     */
+    if (window.jQuery && jQuery.fn.dataTable && jQuery.fn.dataTable.Api) {
+      jQuery.fn.dataTable.Api.register('sum()', function () {
+        return this.flatten().reduce(function (a, b) {
+          return window.parseLocalizedNumber(a) + window.parseLocalizedNumber(b);
+        }, 0);
+      });
+    }
+  </script>
   @stack('scripts')
   <script>
     if ('serviceWorker' in navigator) {
@@ -1243,6 +1320,48 @@
     $('.selectpicker').selectpicker({
       style: 'btn-link',
     });
+
+    (function() {
+      var draftPrefix = 'dekatpos:form-draft:';
+      $('form').each(function(index) {
+        var $form = $(this);
+        var method = String($form.attr('method') || '').toLowerCase();
+        if (method !== 'post' || $form.find('input[name="_method"][value="DELETE"]').length) return;
+        var formId = $form.attr('id') || $form.attr('action') || ('form-' + index);
+        var draftKey = draftPrefix + location.pathname + ':' + formId;
+
+        try {
+          var raw = localStorage.getItem(draftKey);
+          if (raw) {
+            var values = JSON.parse(raw);
+            $.each(values, function(i, field) {
+              var $field = $form.find('[name="' + field.name.replace(/"/g, '\\"') + '"]');
+              if (!$field.length || $field.attr('type') === 'file' || $field.attr('type') === 'password') return;
+              if ($field.is(':checkbox,:radio')) {
+                $field.filter('[value="' + String(field.value).replace(/"/g, '\\"') + '"]').prop('checked', true);
+              }
+              else {
+                $field.val(field.value);
+              }
+            });
+            if ($.fn.selectpicker) $form.find('.selectpicker').selectpicker('refresh');
+          }
+        } catch (e) {}
+
+        $form.on('input change', 'input, select, textarea', function() {
+          try {
+            var values = $form.serializeArray().filter(function(field) {
+              return field.name !== '_token' && field.name !== '_method';
+            });
+            localStorage.setItem(draftKey, JSON.stringify(values));
+          } catch (e) {}
+        });
+
+        $form.on('submit', function() {
+          localStorage.removeItem(draftKey);
+        });
+      });
+    })();
 
 
     setInterval(function() {

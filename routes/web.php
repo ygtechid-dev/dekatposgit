@@ -45,6 +45,7 @@ use App\Http\Controllers\LanguageSettingController;
 use App\Http\Controllers\MoneyTransferController;
 use App\Http\Controllers\NotificationController;
 use App\Http\Controllers\PayrollController;
+use App\Http\Controllers\PosSimpleController;
 use App\Http\Controllers\ProductController;
 use App\Http\Controllers\PurchaseController;
 use App\Http\Controllers\QuotationController;
@@ -190,12 +191,15 @@ Route::group(['middleware' => ['common', 'auth', 'active']], function() {
         Route::post('products/activatebyselection', 'activateBySelection');
         Route::post('products/update', 'updateProduct');
         Route::get('products/variant-data/{id}','variantData');
+        Route::get('products/duplicate/{id}', 'duplicate')->name('products.duplicate');
         Route::get('products/history', 'history')->name('products.history');
         Route::post('products/sale-history-data', 'saleHistoryData');
         Route::post('products/purchase-history-data', 'purchaseHistoryData');
         Route::post('products/sale-return-history-data', 'saleReturnHistoryData');
         Route::post('products/purchase-return-history-data', 'purchaseReturnHistoryData');
         Route::post('products/adjustment-history-data', 'adjustmentHistoryData');
+        Route::post('products/transfer-history-data', 'transferHistoryData');
+        Route::post('products/all-history-data', 'allHistoryData');
 
         Route::post('importproduct', 'importProduct')->name('product.import');
         Route::post('exportproduct', 'exportProduct')->name('product.export');
@@ -264,6 +268,7 @@ Route::group(['middleware' => ['common', 'auth', 'active']], function() {
     Route::resource('warehouse', WarehouseController::class);
 
     Route::controller(RackController::class)->group(function () {
+        Route::get('rak', 'page')->name('rack.page');
         Route::get('racks/warehouse/{warehouse_id}', 'index')->name('rack.index');
         Route::post('racks', 'store')->name('rack.store');
         Route::get('racks/{id}/edit', 'edit')->name('rack.edit');
@@ -362,6 +367,14 @@ Route::group(['middleware' => ['common', 'auth', 'active']], function() {
         Route::get('sales/check-discount', 'checkDiscount');
         Route::post('sales/sendsms', 'sendSMS')->name('sale.sendsms');
     });
+    // POS Simple: halaman kasir ringkas, terpisah dari POS lama.
+    // Penyimpanan transaksinya tetap lewat SaleController@store (route sales.store).
+    Route::controller(PosSimpleController::class)->group(function () {
+        Route::get('pos-simple', 'index')->name('sale.posSimple');
+        Route::get('pos-simple/search', 'search')->name('sale.posSimple.search');
+        Route::get('pos-simple/promos', 'promos')->name('sale.posSimple.promos');
+    });
+
     Route::resource('sales', SaleController::class);
 
 
@@ -433,6 +446,7 @@ Route::group(['middleware' => ['common', 'auth', 'active']], function() {
 
     Route::controller(AdjustmentController::class)->group(function () {
         Route::get('qty_adjustment/getproduct/{id}', 'getProduct')->name('adjustment.getproduct');
+        Route::get('qty_adjustment/product_suggestions', 'productSuggestions')->name('product_adjustment.suggestions');
         Route::get('qty_adjustment/lims_product_search', 'limsProductSearch')->name('product_adjustment.search');
         Route::post('qty_adjustment/deletebyselection', 'deleteBySelection');
     });

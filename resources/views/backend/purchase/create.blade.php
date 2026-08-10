@@ -145,6 +145,7 @@
                                                         <th>{{trans('file.name')}}</th>
                                                         <th>{{trans('file.Code')}}</th>
                                                         <th>{{trans('file.Quantity')}}</th>
+                                                        <th>Satuan</th>
                                                         <th class="recieved-product-qty d-none">{{trans('file.Recieved')}}</th>
                                                         <th>{{trans('file.Batch No')}}</th>
                                                         <th>{{trans('file.Expired Date')}}</th>
@@ -160,6 +161,7 @@
                                                 <tfoot class="tfoot active">
                                                     <th colspan="2">{{trans('file.Total')}}</th>
                                                     <th id="total-qty">0</th>
+                                                    <th></th>
                                                     <th class="recieved-product-qty d-none"></th>
                                                     <th></th>
                                                     <th></th>
@@ -365,6 +367,7 @@
     var currency = <?php echo json_encode($currency) ?>;
     var exchangeRate = 1;
     var currencyChange = false;
+    var purchaseDraftKey = 'dekatpos:draft:' + location.pathname;
 
     $('#currency-id').val(currency['id']);
     $('.selectpicker').selectpicker({
@@ -557,6 +560,7 @@
         console.log(product_cost);
         $(this).closest("tr").remove();
         calculateTotal();
+        savePurchaseDraft();
     });
 
     //Edit product
@@ -653,6 +657,8 @@
         unit_operator[rowindex] = temp_unit_operator.toString() + ',';
         unit_operation_value[rowindex] = temp_unit_operation_value.toString() + ',';
         checkQuantity(edit_qty, false);
+        savePurchaseDraft();
+        lims_productcodeSearch.focus().select();
     });
 
     function productSearch(data) {
@@ -681,9 +687,22 @@
                     var newRow = $("<tr>");
                     var cols = '';
                     temp_unit_name = (data[6]).split(',');
+                    var unitOptions = '';
+                    $.each(temp_unit_name, function(unitKey, unitLabel) {
+                        if(unitLabel)
+                            unitOptions += '<option value="' + unitKey + '">' + unitLabel + '</option>';
+                    });
+                    var taxNameAll = <?php echo json_encode($tax_name_all) ?>;
+                    var taxRateAll = <?php echo json_encode($tax_rate_all) ?>;
+                    var taxOptions = '';
+                    $.each(taxNameAll, function(taxKey, taxLabel) {
+                        var selected = parseFloat(taxRateAll[taxKey]) == parseFloat(data[3]) ? ' selected' : '';
+                        taxOptions += '<option value="' + taxKey + '"' + selected + '>' + taxLabel + '</option>';
+                    });
                     cols += '<td>' + data[0] + '<button type="button" class="edit-product btn btn-link" data-toggle="modal" data-target="#editModal"> <i class="dripicons-document-edit"></i></button></td>';
                     cols += '<td>' + data[1] + '</td>';
                     cols += '<td><input type="text" class="form-control qty" name="qty[]" value="1" required/></td>';
+                    cols += '<td><select class="form-control inline-purchase-unit">' + unitOptions + '</select></td>';
                     if($('select[name="status"]').val() == 1)
                         cols += '<td class="recieved-product-qty d-none"><input type="text" class="form-control recieved" name="recieved[]" value="1" /></td>';
                     else if($('select[name="status"]').val() == 2)
@@ -700,8 +719,8 @@
                     }
 
                     cols += '<td><input type="number" step="any" class="form-control net_unit_cost" name="net_unit_cost[]" /></td>';
-                    cols += '<td class="discount">{{number_format(0, $general_setting->decimal, ',', '.')}}</td>';
-                    cols += '<td class="tax"></td>';
+                    cols += '<td><input type="number" step="any" class="form-control inline-discount" value="{{number_format(0, $general_setting->decimal, '.', '')}}" /></td>';
+                    cols += '<td><select class="form-control inline-tax-select">' + taxOptions + '</select><div class="tax small text-right mt-1"></div></td>';
                     cols += '<td class="sub-total"></td>';
                     cols += '<td><button type="button" class="ibtnDel btn btn-md btn-danger">{{trans("file.delete")}}</button></td>';
                     cols += '<input type="hidden" class="product-code" name="product_code[]" value="' + data[1] + '"/>';
@@ -728,6 +747,8 @@
                     unit_operation_value.splice(rowindex,0, data[8]);
                     is_imei.splice(rowindex, 0, data[11]);
                     checkQuantity(1, true);
+                    savePurchaseDraft();
+                    newRow.find('.inline-purchase-unit').focus();
                     if(data[11]) {
                         $('table.order-list tbody tr:nth-child(' + (rowindex + 1) + ')').find('.edit-product').click();
                     }
@@ -751,9 +772,62 @@
 
     $(document).on('change input', 'table.order-list .net_unit_cost', function() {
         rowindex = $(this).closest('tr').index();
+        var $row = $(this).closest('tr');
         var netUnitCost = parseFloat($(this).val()) || 0;
         setBaseCostFromNetUnitCost(rowindex, netUnitCost);
-        calculateTotal();
+        var oldCost = parseFloat($row.find('.original-cost').val()) || 0;
+        var productId = $row.find('.product-id').val();
+        if (oldCost > 0 && product_cost[rowindex] > oldCost && !$row.data('hpp-increase-warned')) {
+            $row.data('hpp-increase-warned', true);
+            if (confirm('HPP produk ini naik dari ' + oldCost + ' menjadi ' + product_cost[rowindex].toFixed({{$general_setting->decimal}}) + '. Mau edit harga jual produk sekarang?')) {
+                window.open('{{url("products")}}/' + productId + '/edit', '_blank');
+            }
+        }
+        calculateRowProductData($row.find('.qty').val());
+        savePurchaseDraft();
+    });
+
+    $(document).on('change', 'table.order-list .inline-purchase-unit', function() {
+        rowindex = $(this).closest('tr').index();
+        calculateRowProductData($(this).closest('tr').find('.qty').val());
+        savePurchaseDraft();
+        $(this).closest('tr').find('.net_unit_cost').focus().select();
+    });
+
+    $(document).on('input change', 'table.order-list .inline-discount', function() {
+        rowindex = $(this).closest('tr').index();
+        product_discount[rowindex] = parseFloat($(this).val()) || 0;
+        calculateRowProductData($(this).closest('tr').find('.qty').val());
+        savePurchaseDraft();
+    });
+
+    $(document).on('change', 'table.order-list .inline-tax-select', function() {
+        rowindex = $(this).closest('tr').index();
+        var tax_rate_all = <?php echo json_encode($tax_rate_all) ?>;
+        var tax_name_all = <?php echo json_encode($tax_name_all) ?>;
+        tax_rate[rowindex] = parseFloat(tax_rate_all[$(this).val()]) || 0;
+        tax_name[rowindex] = tax_name_all[$(this).val()];
+        calculateRowProductData($(this).closest('tr').find('.qty').val());
+        savePurchaseDraft();
+        lims_productcodeSearch.focus().select();
+    });
+
+    $(document).on('keydown', 'table.order-list .inline-purchase-unit, table.order-list .net_unit_cost, table.order-list .inline-discount, table.order-list .inline-tax-select', function(e) {
+        if (e.key !== 'Enter') return;
+        e.preventDefault();
+        var $row = $(this).closest('tr');
+        if ($(this).hasClass('inline-purchase-unit')) {
+            $row.find('.net_unit_cost').focus().select();
+        }
+        else if ($(this).hasClass('net_unit_cost')) {
+            $row.find('.inline-discount').focus().select();
+        }
+        else if ($(this).hasClass('inline-discount')) {
+            $row.find('.inline-tax-select').focus();
+        }
+        else {
+            lims_productcodeSearch.focus().select();
+        }
     });
 
     function setBaseCostFromNetUnitCost(index, netUnitCost) {
@@ -763,8 +837,12 @@
         else
             currentUnitCost = netUnitCost + parseFloat(product_discount[index] || 0);
 
-        var operator = unit_operator[index].slice(0, unit_operator[index].indexOf(","));
-        var operationValue = parseFloat(unit_operation_value[index].slice(0, unit_operation_value[index].indexOf(","))) || 1;
+        var $row = $('table.order-list tbody tr:nth-child(' + (index + 1) + ')');
+        var selectedUnit = parseInt($row.find('.inline-purchase-unit').val()) || 0;
+        var operators = unit_operator[index].split(',');
+        var operationValues = unit_operation_value[index].split(',');
+        var operator = operators[selectedUnit] || operators[0];
+        var operationValue = parseFloat(operationValues[selectedUnit] || operationValues[0]) || 1;
         if (operator == '*')
             product_cost[index] = currentUnitCost / operationValue;
         else if (operator == '/')
@@ -776,40 +854,46 @@
     function calculateRowProductData(quantity) {
         //product_cost[rowindex] = $('table.order-list tbody tr:nth-child(' + (rowindex + 1) + ')').find('.original-cost').val() * exchangeRate;
         unitConversion();
-        $('table.order-list tbody tr:nth-child(' + (rowindex + 1) + ')').find('.discount').text((product_discount[rowindex] * quantity).toFixed({{$general_setting->decimal}}));
-        $('table.order-list tbody tr:nth-child(' + (rowindex + 1) + ')').find('.discount-value').val((product_discount[rowindex] * quantity).toFixed({{$general_setting->decimal}}));
-        $('table.order-list tbody tr:nth-child(' + (rowindex + 1) + ')').find('.tax-rate').val(tax_rate[rowindex].toFixed({{$general_setting->decimal}}));
+        var $row = $('table.order-list tbody tr:nth-child(' + (rowindex + 1) + ')');
+        $row.find('.discount-value').val((product_discount[rowindex] * quantity).toFixed({{$general_setting->decimal}}));
+        $row.find('.tax-rate').val(tax_rate[rowindex].toFixed({{$general_setting->decimal}}));
 
         if (tax_method[rowindex] == 1) {
             var net_unit_cost = row_product_cost - product_discount[rowindex];
             var tax = net_unit_cost * quantity * (tax_rate[rowindex] / 100);
             var sub_total = (net_unit_cost * quantity) + tax;
 
-            $('table.order-list tbody tr:nth-child(' + (rowindex + 1) + ')').find('.net_unit_cost').val(net_unit_cost.toFixed({{$general_setting->decimal}}));
-            $('table.order-list tbody tr:nth-child(' + (rowindex + 1) + ')').find('.tax').text(tax.toFixed({{$general_setting->decimal}}));
-            $('table.order-list tbody tr:nth-child(' + (rowindex + 1) + ')').find('.tax-value').val(tax.toFixed({{$general_setting->decimal}}));
-            $('table.order-list tbody tr:nth-child(' + (rowindex + 1) + ')').find('.sub-total').text(sub_total.toFixed({{$general_setting->decimal}}));
-            $('table.order-list tbody tr:nth-child(' + (rowindex + 1) + ')').find('.subtotal-value').val(sub_total.toFixed({{$general_setting->decimal}}));
+            $row.find('.net_unit_cost').val(net_unit_cost.toFixed({{$general_setting->decimal}}));
+            $row.find('.tax').text(tax.toFixed({{$general_setting->decimal}}));
+            $row.find('.tax-value').val(tax.toFixed({{$general_setting->decimal}}));
+            $row.find('.sub-total').text(sub_total.toFixed({{$general_setting->decimal}}));
+            $row.find('.subtotal-value').val(sub_total.toFixed({{$general_setting->decimal}}));
         } else {
             var sub_total_unit = row_product_cost - product_discount[rowindex];
             var net_unit_cost = (100 / (100 + tax_rate[rowindex])) * sub_total_unit;
             var tax = (sub_total_unit - net_unit_cost) * quantity;
             var sub_total = sub_total_unit * quantity;
 
-            $('table.order-list tbody tr:nth-child(' + (rowindex + 1) + ')').find('.net_unit_cost').val(net_unit_cost.toFixed({{$general_setting->decimal}}));
-            $('table.order-list tbody tr:nth-child(' + (rowindex + 1) + ')').find('.tax').text(tax.toFixed({{$general_setting->decimal}}));
-            $('table.order-list tbody tr:nth-child(' + (rowindex + 1) + ')').find('.tax-value').val(tax.toFixed({{$general_setting->decimal}}));
-            $('table.order-list tbody tr:nth-child(' + (rowindex + 1) + ')').find('.sub-total').text(sub_total.toFixed({{$general_setting->decimal}}));
-            $('table.order-list tbody tr:nth-child(' + (rowindex + 1) + ')').find('.subtotal-value').val(sub_total.toFixed({{$general_setting->decimal}}));
+            $row.find('.net_unit_cost').val(net_unit_cost.toFixed({{$general_setting->decimal}}));
+            $row.find('.tax').text(tax.toFixed({{$general_setting->decimal}}));
+            $row.find('.tax-value').val(tax.toFixed({{$general_setting->decimal}}));
+            $row.find('.sub-total').text(sub_total.toFixed({{$general_setting->decimal}}));
+            $row.find('.subtotal-value').val(sub_total.toFixed({{$general_setting->decimal}}));
         }
 
         calculateTotal();
     }
 
     function unitConversion() {
-        var row_unit_operator = unit_operator[rowindex].slice(0, unit_operator[rowindex].indexOf(","));
-        var row_unit_operation_value = unit_operation_value[rowindex].slice(0, unit_operation_value[rowindex].indexOf(","));
+        var $row = $('table.order-list tbody tr:nth-child(' + (rowindex + 1) + ')');
+        var selectedUnit = parseInt($row.find('.inline-purchase-unit').val()) || 0;
+        var unitNames = unit_name[rowindex].split(',');
+        var operators = unit_operator[rowindex].split(',');
+        var operationValues = unit_operation_value[rowindex].split(',');
+        var row_unit_operator = operators[selectedUnit] || operators[0];
+        var row_unit_operation_value = operationValues[selectedUnit] || operationValues[0];
         row_unit_operation_value = parseFloat(row_unit_operation_value) || 1;
+        $row.find('.purchase-unit').val(unitNames[selectedUnit] || unitNames[0]);
         if (row_unit_operator == '*') {
             row_product_cost = product_cost[rowindex] * row_unit_operation_value;
         } else if (row_unit_operator == '/') {
@@ -835,8 +919,8 @@
 
         //Sum of discount
         var total_discount = 0;
-        $(".discount").each(function() {
-            total_discount += parseFloat($(this).text());
+        $(".discount-value").each(function() {
+            total_discount += parseLocalizedNumber($(this).val());
         });
         $("#total-discount").text(total_discount.toFixed({{$general_setting->decimal}}));
         $('input[name="total_discount"]').val(total_discount.toFixed({{$general_setting->decimal}}));
@@ -844,7 +928,7 @@
         //Sum of tax
         var total_tax = 0;
         $(".tax").each(function() {
-            total_tax += parseFloat($(this).text());
+            total_tax += parseLocalizedNumber($(this).text());
         });
         $("#total-tax").text(total_tax.toFixed({{$general_setting->decimal}}));
         $('input[name="total_tax"]').val(total_tax.toFixed({{$general_setting->decimal}}));
@@ -852,18 +936,19 @@
         //Sum of subtotal
         var total = 0;
         $(".sub-total").each(function() {
-            total += parseFloat($(this).text());
+            total += parseLocalizedNumber($(this).text());
         });
         $("#total").text(total.toFixed({{$general_setting->decimal}}));
         $('input[name="total_cost"]').val(total.toFixed({{$general_setting->decimal}}));
 
         calculateGrandTotal();
+        savePurchaseDraft();
     }
 
     function calculateGrandTotal() {
         var item = $('table.order-list tbody tr:last').index();
-        var total_qty = parseFloat($('#total-qty').text());
-        var subtotal = parseFloat($('#total').text());
+        var total_qty = parseLocalizedNumber($('#total-qty').text());
+        var subtotal = parseLocalizedNumber($('#total').text());
         var order_tax = parseFloat($('select[name="order_tax_rate"]').val());
         if($('input[name="order_discount"]').val()) {
             if(!currencyChange)
@@ -932,6 +1017,74 @@
         }
     });
 
+    $('#editModal').on('keydown', 'input, select', function(e) {
+        if (e.key !== 'Enter') return;
+        e.preventDefault();
+        var order = ['edit_unit', 'edit_unit_cost', 'edit_discount', 'edit_tax_rate'];
+        var currentName = $(this).attr('name');
+        var pos = order.indexOf(currentName);
+        if (pos > -1 && pos < order.length - 1) {
+            $('#editModal [name="' + order[pos + 1] + '"]').focus().select();
+        }
+        else {
+            $('#editModal button[name="update_btn"]').click();
+        }
+    });
+
+    function savePurchaseDraft() {
+        try {
+            localStorage.setItem(purchaseDraftKey, JSON.stringify({
+                fields: $('#purchase-form').serializeArray(),
+                tbody: $('table.order-list tbody').html(),
+                product_cost: product_cost,
+                product_discount: product_discount,
+                tax_rate: tax_rate,
+                tax_name: tax_name,
+                tax_method: tax_method,
+                unit_name: unit_name,
+                unit_operator: unit_operator,
+                unit_operation_value: unit_operation_value,
+                is_imei: is_imei
+            }));
+        } catch (e) {}
+    }
+
+    function restorePurchaseDraft() {
+        try {
+            var raw = localStorage.getItem(purchaseDraftKey);
+            if (!raw) return;
+            var draft = JSON.parse(raw);
+            if (draft.fields) {
+                $.each(draft.fields, function(i, field) {
+                    var $field = $('#purchase-form [name="' + field.name.replace(/"/g, '\\"') + '"]');
+                    if (!$field.length || $field.attr('type') === 'file') return;
+                    if ($field.is(':checkbox,:radio')) {
+                        $field.filter('[value="' + field.value.replace(/"/g, '\\"') + '"]').prop('checked', true);
+                    }
+                    else {
+                        $field.val(field.value);
+                    }
+                });
+                $('.selectpicker').selectpicker('refresh');
+            }
+            if (draft.tbody) $('table.order-list tbody').html(draft.tbody);
+            product_cost = draft.product_cost || [];
+            product_discount = draft.product_discount || [];
+            tax_rate = draft.tax_rate || [];
+            tax_name = draft.tax_name || [];
+            tax_method = draft.tax_method || [];
+            unit_name = draft.unit_name || [];
+            unit_operator = draft.unit_operator || [];
+            unit_operation_value = draft.unit_operation_value || [];
+            is_imei = draft.is_imei || [];
+            calculateTotal();
+        } catch (e) {}
+    }
+
+    setTimeout(restorePurchaseDraft, 350);
+    $('#purchase-form').on('input change', 'input, select, textarea', savePurchaseDraft);
+    $('table.order-list tbody').on('input change', 'input, select', savePurchaseDraft);
+
     $('#purchase-form').on('submit',function(e){
     var rownumber = $('table.order-list tbody tr:last').index();
     if (rownumber < 0) {
@@ -956,12 +1109,15 @@
             alert('Quantity and Recieved value is same! Please Change Purchase Status or Recieved value');
             e.preventDefault();
         }
-        else
+        else {
             $(".batch-no, .expired-date").prop('disabled', false);
+            localStorage.removeItem(purchaseDraftKey);
+        }
     }
     else {
         $(".batch-no, .expired-date").prop('disabled', false);
         $("#submit-btn").prop('disabled', true);
+        localStorage.removeItem(purchaseDraftKey);
     }
  });
 </script>

@@ -193,6 +193,7 @@
                     <li id="adjustment-create-menu"><a href="{{route('qty_adjustment.create')}}">{{trans('file.Add Adjustment')}}</a></li>
                   @endif
                   @if($rack_plan_active)
+                    <li id="rack-menu"><a href="{{route('rack.page')}}">Rak</a></li>
                     <li id="plan-toko-menu"><a href="{{route('rack.planToko')}}">Plan Toko</a></li>
                     <li id="plan-gudang-menu"><a href="{{route('rack.planGudang')}}">Plan Gudang</a></li>
                   @endif

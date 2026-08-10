@@ -18,6 +18,7 @@ use Illuminate\Validation\Rule;
 use Spatie\Permission\Models\Role;
 use Spatie\Permission\Models\Permission;
 use Auth;
+use App\Services\JournalService;
 
 
 class AccountsController extends Controller
@@ -111,6 +112,9 @@ class AccountsController extends Controller
             // (same balance calculation as trialBalance()) so the Neraca always stays in
             // sync with journal postings/reversals, instead of re-deriving figures from
             // legacy Payment/Returns/Expense/Payroll/MoneyTransfer tables independently.
+            Account::where('is_active', true)->get()->each(function($account) {
+                JournalService::coaIdForCashAccount($account->id);
+            });
             $lims_coa_all = ChartOfAccount::where('is_active', true)->orderBy('code')->get();
 
             $assets = [];
@@ -121,6 +125,11 @@ class AccountsController extends Controller
             $total_equity_accounts = 0;
             $total_revenue = 0;
             $total_expense = 0;
+
+            $linked_cash_coa_ids = Account::where('is_active', true)
+                ->whereNotNull('chart_of_account_id')
+                ->pluck('chart_of_account_id')
+                ->toArray();
 
             foreach($lims_coa_all as $coa) {
                 $sums = JournalDetail::join('journals', 'journals.id', '=', 'journal_details.journal_id')
@@ -135,27 +144,35 @@ class AccountsController extends Controller
                             : ($sums->total_credit - $sums->total_debit);
                 $balance = (float)$coa->opening_balance + $movement;
 
-                if(abs($balance) < 0.005)
+                $shouldShowZeroAsset = $coa->type == 'asset'
+                    && (in_array($coa->id, $linked_cash_coa_ids) || $coa->code == JournalService::PERSEDIAAN);
+
+                if(abs($balance) < 0.005 && !$shouldShowZeroAsset)
                     continue;
 
                 switch($coa->type) {
                     case 'asset':
-                        $assets[] = ['name' => $coa->name, 'amount' => $balance];
+                        $assets[] = ['name' => $coa->code . ' - ' . $coa->name, 'amount' => $balance];
                         $total_assets += $balance;
                         break;
                     case 'liability':
-                        $liabilities[] = ['name' => $coa->name, 'amount' => $balance];
+                        $liabilities[] = ['name' => $coa->code . ' - ' . $coa->name, 'amount' => $balance];
                         $total_liabilities += $balance;
                         break;
                     case 'equity':
-                        $equity_items[] = ['name' => $coa->name, 'amount' => $balance];
+                        $equity_items[] = ['name' => $coa->code . ' - ' . $coa->name, 'amount' => $balance];
                         $total_equity_accounts += $balance;
                         break;
+                    // Akun kontra (Diskon Pembelian 5410 & Retur Pembelian 5400 bersaldo
+                    // normal kredit, Diskon/Retur Penjualan 4200-4300 bersaldo normal debet)
+                    // harus MENGURANGI kelompoknya, bukan menambah. Jadi kontribusinya
+                    // dihitung memakai arah alami tipe akun, bukan arah saldo normalnya:
+                    // pendapatan = kredit - debet, beban = debet - kredit.
                     case 'revenue':
-                        $total_revenue += $balance;
+                        $total_revenue += $isDebitNormal ? -$balance : $balance;
                         break;
                     case 'expense':
-                        $total_expense += $balance;
+                        $total_expense += $isDebitNormal ? $balance : -$balance;
                         break;
                 }
             }
@@ -163,32 +180,82 @@ class AccountsController extends Controller
             // Revenue/expense accounts are temporary equity accounts: fold the running
             // net income for the period into Modal/Ekuitas so Aktiva = Pasiva + Modal.
             $net_income = $total_revenue - $total_expense;
+            $equity_items[] = ['name' => 'Laba / Rugi Berjalan', 'amount' => $net_income];
             $equity = $total_equity_accounts + $net_income;
 
-            // Legacy per cash/bank-account detail table below the summary (Detail Saldo
-            // Akun) still reports physical account movements, kept as-is, but now
-            // labelled with each account's Kode Akun (code/name) via coa_label_*.
+            // Detail Saldo Akun now reads from journal_details too, so Kas Kecil,
+            // Kas Besar, bank accounts, etc. move exactly like Buku Besar/Neraca.
             $lims_account_list = Account::with('chartOfAccount')->where('is_active', true)->get();
-            $debit = [];
-            $credit = [];
+            $account_debit = [];
+            $account_credit = [];
+            $account_balance = [];
             foreach ($lims_account_list as $account) {
-                $payment_recieved = Payment::whereNotNull('sale_id')->where('account_id', $account->id)->sum('amount');
-                $payment_sent = Payment::whereNotNull('purchase_id')->where('account_id', $account->id)->sum('amount');
-                $returns = DB::table('returns')->where('account_id', $account->id)->sum('grand_total');
-                $return_purchase = DB::table('return_purchases')->where('account_id', $account->id)->sum('grand_total');
-                $expenses = DB::table('expenses')->where('account_id', $account->id)->sum('amount');
-                $payrolls = DB::table('payrolls')->where('account_id', $account->id)->sum('amount');
-                $sent_money_via_transfer = MoneyTransfer::where('from_account_id', $account->id)->sum('amount');
-                $recieved_money_via_transfer = MoneyTransfer::where('to_account_id', $account->id)->sum('amount');
-
-                $credit[] = $payment_recieved + $return_purchase + $recieved_money_via_transfer + $account->initial_balance;
-                $debit[] = $payment_sent + $returns + $expenses + $payrolls + $sent_money_via_transfer;
+                $coa = $account->chartOfAccount;
+                if(!$coa) {
+                    $account_debit[] = 0;
+                    $account_credit[] = 0;
+                    $account_balance[] = 0;
+                    continue;
+                }
+                $sums = JournalDetail::join('journals', 'journals.id', '=', 'journal_details.journal_id')
+                            ->where('journal_details.chart_of_account_id', $coa->id)
+                            ->whereDate('journals.journal_date', '<=', $end_date)
+                            ->selectRaw('COALESCE(SUM(debit),0) as total_debit, COALESCE(SUM(credit),0) as total_credit')
+                            ->first();
+                $account_debit[] = (float)$coa->opening_balance + (float)$sums->total_debit;
+                $account_credit[] = (float)$sums->total_credit;
+                $account_balance[] = ((float)$coa->opening_balance + (float)$sums->total_debit) - (float)$sums->total_credit;
             }
 
-            return view('backend.account.balance_sheet', compact('lims_account_list', 'debit', 'credit', 'assets', 'liabilities', 'total_assets', 'total_liabilities', 'equity', 'end_date'));
+            return view('backend.account.balance_sheet', compact('lims_account_list', 'account_debit', 'account_credit', 'account_balance', 'assets', 'liabilities', 'equity_items', 'total_assets', 'total_liabilities', 'equity', 'end_date'));
         }
         else
             return redirect()->back()->with('not_permitted', 'Sorry! You are not allowed to access this module');
+    }
+
+    private function journalBalanceByCode($code, $start_date, $end_date)
+    {
+        $accounts = ChartOfAccount::where('code', $code)
+            ->orWhere('code', 'like', $code . '.%')
+            ->get();
+        if($accounts->isEmpty())
+            return 0;
+
+        $total = 0;
+        foreach($accounts as $coa) {
+            $sums = JournalDetail::join('journals', 'journals.id', '=', 'journal_details.journal_id')
+                        ->where('journal_details.chart_of_account_id', $coa->id)
+                        ->whereDate('journals.journal_date', '>=', $start_date)
+                        ->whereDate('journals.journal_date', '<=', $end_date)
+                        ->selectRaw('COALESCE(SUM(debit),0) as total_debit, COALESCE(SUM(credit),0) as total_credit')
+                        ->first();
+            $total += $coa->normal_balance == 'debit'
+                ? (float)($sums->total_debit - $sums->total_credit)
+                : (float)($sums->total_credit - $sums->total_debit);
+        }
+
+        return $total;
+    }
+
+    private function journalBalanceByType($type, $start_date, $end_date)
+    {
+        $total = 0;
+        $accounts = ChartOfAccount::where('type', $type)->where('is_active', true)->get();
+        foreach($accounts as $coa) {
+            $sums = JournalDetail::join('journals', 'journals.id', '=', 'journal_details.journal_id')
+                        ->where('journal_details.chart_of_account_id', $coa->id)
+                        ->whereDate('journals.journal_date', '>=', $start_date)
+                        ->whereDate('journals.journal_date', '<=', $end_date)
+                        ->selectRaw('COALESCE(SUM(debit),0) as total_debit, COALESCE(SUM(credit),0) as total_credit')
+                        ->first();
+            // Pakai arah alami tipe akun supaya akun kontra ikut mengurangi total:
+            // beban = debet - kredit (Diskon/Retur Pembelian bersaldo kredit -> negatif),
+            // pendapatan = kredit - debet (Diskon/Retur Penjualan bersaldo debet -> negatif).
+            $total += $type == 'revenue' || $type == 'liability' || $type == 'equity'
+                ? (float)($sums->total_credit - $sums->total_debit)
+                : (float)($sums->total_debit - $sums->total_credit);
+        }
+        return $total;
     }
 
     public function profitLoss(Request $request)
@@ -200,49 +267,20 @@ class AccountsController extends Controller
         $start_date = $request->input('start_date', date('Y-m-01'));
         $end_date = $request->input('end_date', date('Y-m-d'));
 
-        $sales = DB::table('sales')
-                    ->where('sale_status', 1)
-                    ->whereDate('created_at', '>=', $start_date)
-                    ->whereDate('created_at', '<=', $end_date);
-        $gross_sales = (clone $sales)->sum('total_price');
-        $order_discount = (clone $sales)->sum('order_discount');
-        $order_tax = (clone $sales)->sum('order_tax');
-        $shipping_cost = (clone $sales)->sum('shipping_cost');
-        $grand_total = (clone $sales)->sum('grand_total');
-        $sale_returns = DB::table('returns')
-                            ->whereDate('created_at', '>=', $start_date)
-                            ->whereDate('created_at', '<=', $end_date)
-                            ->sum('grand_total');
+        $gross_sales = $this->journalBalanceByCode('4100', $start_date, $end_date);
+        $sale_returns = $this->journalBalanceByCode('4200', $start_date, $end_date);
+        $order_discount = $this->journalBalanceByCode('4300', $start_date, $end_date);
+        $order_tax = 0;
+        $shipping_cost = 0;
+        $grand_total = $gross_sales;
+        $cost_of_goods_sold = $this->journalBalanceByCode('5100', $start_date, $end_date);
+        $payrolls = $this->journalBalanceByCode('5300', $start_date, $end_date);
+        $total_expense_accounts = $this->journalBalanceByType('expense', $start_date, $end_date);
+        // Jangan di-clamp ke 0: potongan/retur pembelian bernilai negatif dan memang
+        // harus mengurangi beban (menambah laba), bukan dibuang.
+        $expenses = $total_expense_accounts - $cost_of_goods_sold - $payrolls;
 
-        $sold_products = DB::table('product_sales')
-                            ->join('sales', 'product_sales.sale_id', '=', 'sales.id')
-                            ->join('products', 'product_sales.product_id', '=', 'products.id')
-                            ->leftJoin('units', 'product_sales.sale_unit_id', '=', 'units.id')
-                            ->where('sales.sale_status', 1)
-                            ->whereDate('sales.created_at', '>=', $start_date)
-                            ->whereDate('sales.created_at', '<=', $end_date)
-                            ->select('product_sales.qty', 'products.cost', 'units.operator', 'units.operation_value')
-                            ->get();
-        $cost_of_goods_sold = 0;
-        foreach($sold_products as $sold_product) {
-            $quantity = $sold_product->qty;
-            if($sold_product->operator == '*')
-                $quantity *= $sold_product->operation_value;
-            elseif($sold_product->operator == '/' && $sold_product->operation_value)
-                $quantity /= $sold_product->operation_value;
-            $cost_of_goods_sold += $quantity * $sold_product->cost;
-        }
-
-        $expenses = DB::table('expenses')
-                        ->whereDate('created_at', '>=', $start_date)
-                        ->whereDate('created_at', '<=', $end_date)
-                        ->sum('amount');
-        $payrolls = DB::table('payrolls')
-                        ->whereDate('created_at', '>=', $start_date)
-                        ->whereDate('created_at', '<=', $end_date)
-                        ->sum('amount');
-
-        $net_sales = $grand_total - $sale_returns;
+        $net_sales = $gross_sales - $sale_returns - $order_discount;
         $gross_profit = $net_sales - $cost_of_goods_sold;
         $total_expenses = $expenses + $payrolls;
         $net_profit = $gross_profit - $total_expenses;

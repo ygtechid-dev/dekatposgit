@@ -369,7 +369,7 @@ for(rowindex  =0; rowindex <= rownumber; rowindex++){
 	function calculateTotal() {
 	    var total_qty = 0;
 	    $(".difference-cell").each(function() {
-	        var val = parseFloat($(this).text());
+	        var val = parseLocalizedNumber($(this).text());
 	        if (!isNaN(val)) total_qty += val;
 	    });
 	    $("#total-qty").text(total_qty);
