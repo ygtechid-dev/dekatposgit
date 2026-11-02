@@ -8,6 +8,13 @@
 @endif
 
 <section>
+    @if(auth()->user()->role_id <= 2)
+    <div class="box-header" style="margin-bottom:12px;">
+        <a href="{{ route('cashRegister.settle') }}" class="btn btn-success btn-sm">
+            <i class="fa fa-check-circle"></i> {{ trans('file.Cash Register Settlement') }} (Approve / Reject)
+        </a>
+    </div>
+    @endif
     <div class="table-responsive">
         <table id="cash-register-table" class="table">
             <thead>

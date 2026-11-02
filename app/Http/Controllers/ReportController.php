@@ -592,6 +592,21 @@ class ReportController extends Controller
     {
         $start_date = $request['start_date'];
         $end_date = $request['end_date'];
+
+        // Gate: hanya register yang sudah approve (settle_status=1) yang masuk L/R.
+        // Transaksi tanpa register selalu masuk. Periode dipakai = tanggal transaksi register.
+        $approvedRegIds = \App\Models\CashRegister::where('settle_status', 1)->pluck('id')->toArray();
+        $gate = function($q) use ($approvedRegIds) {
+            $q->where(function($sub) use ($approvedRegIds) {
+                $sub->whereNull('cash_register_id')
+                    ->orWhere(function($q2) use ($approvedRegIds) {
+                        $q2->where('cash_register_id', '>', 0);
+                        if (count($approvedRegIds)) $q2->whereIn('cash_register_id', $approvedRegIds);
+                        else $q2->whereRaw('1 = 0');
+                    });
+            });
+        };
+
         $query1 = array(
             'SUM(grand_total) AS grand_total',
             'SUM(shipping_cost) AS shipping_cost',
@@ -606,11 +621,19 @@ class ReportController extends Controller
         config()->set('database.connections.mysql.strict', false);
         DB::reconnect();
         $product_sale_data = Product_Sale::join('sales', 'product_sales.sale_id', '=', 'sales.id')
-                            ->select(DB::raw('product_sales.product_id, product_sales.product_batch_id, product_sales.sale_unit_id, sum(product_sales.qty) as sold_qty, sum(product_sales.return_qty) as return_qty, sum(product_sales.total) as sold_amount'))
-                            ->whereDate('sales.created_at', '>=' , $start_date)
-                            ->whereDate('sales.created_at', '<=' , $end_date)
-                            ->groupBy('product_sales.product_id', 'product_sales.product_batch_id')
-                            ->get();
+                             ->select(DB::raw('product_sales.product_id, product_sales.product_batch_id, product_sales.sale_unit_id, sum(product_sales.qty) as sold_qty, sum(product_sales.return_qty) as return_qty, sum(product_sales.total) as sold_amount'))
+                             ->whereDate('sales.created_at', '>=' , $start_date)
+                             ->whereDate('sales.created_at', '<=' , $end_date)
+                             ->where(function($q) use ($approvedRegIds) {
+                                 $q->whereNull('sales.cash_register_id')
+                                   ->orWhere(function($q2) use ($approvedRegIds) {
+                                       $q2->where('sales.cash_register_id', '>', 0);
+                                       if (count($approvedRegIds)) $q2->whereIn('sales.cash_register_id', $approvedRegIds);
+                                       else $q2->whereRaw('1 = 0');
+                                   });
+                             })
+                             ->groupBy('product_sales.product_id', 'product_sales.product_batch_id')
+                             ->get();
                             
         config()->set('database.connections.mysql.strict', true);
             DB::reconnect();
@@ -651,16 +674,61 @@ class ReportController extends Controller
             $product_cost += $purchased_amount;
             $product_tax += $purchased_tax;
         }*/
+        // Helper: tambah gate register (register yang belum approved tidak dihitung)
+        // (gate sudah didefinisikan di awal profitLoss; di sini tidak perlu lagi, hanya dipakai)
         $purchase = Purchase::whereDate('created_at', '>=' , $start_date)->whereDate('created_at', '<=' , $end_date)->selectRaw(implode(',', $query1))->get();
         $total_purchase = Purchase::whereDate('created_at', '>=' , $start_date)->whereDate('created_at', '<=' , $end_date)->count();
-        $sale = Sale::whereDate('created_at', '>=' , $start_date)->whereDate('created_at', '<=' , $end_date)->selectRaw(implode(',', $query1))->get();
-        $total_sale = Sale::whereDate('created_at', '>=' , $start_date)->whereDate('created_at', '<=' , $end_date)->count();
-        $return = Returns::whereDate('created_at', '>=' , $start_date)->whereDate('created_at', '<=' , $end_date)->selectRaw(implode(',', $query2))->get();
-        $total_return = Returns::whereDate('created_at', '>=' , $start_date)->whereDate('created_at', '<=' , $end_date)->count();
+        $saleQ = Sale::whereDate('created_at', '>=' , $start_date)->whereDate('created_at', '<=' , $end_date);
+        $saleQ->where(function($q) use ($approvedRegIds) {
+            $q->whereNull('cash_register_id')
+              ->orWhere(function($q2) use ($approvedRegIds) {
+                  $q2->where('cash_register_id', '>', 0);
+                  if (count($approvedRegIds)) $q2->whereIn('cash_register_id', $approvedRegIds);
+                  else $q2->whereRaw('1 = 0');
+              });
+        });
+        $sale = $saleQ->selectRaw(implode(',', $query1))->get();
+        $total_sale = Sale::whereDate('created_at', '>=' , $start_date)->whereDate('created_at', '<=' , $end_date)
+            ->where(function($q) use ($approvedRegIds) {
+                $q->whereNull('cash_register_id')
+                  ->orWhere(function($q2) use ($approvedRegIds) {
+                      $q2->where('cash_register_id', '>', 0);
+                      if (count($approvedRegIds)) $q2->whereIn('cash_register_id', $approvedRegIds);
+                      else $q2->whereRaw('1 = 0');
+                  });
+            })->count();
+        $returnQ = Returns::whereDate('created_at', '>=' , $start_date)->whereDate('created_at', '<=' , $end_date);
+        $returnQ->where(function($q) use ($approvedRegIds) {
+            $q->whereNull('cash_register_id')
+              ->orWhere(function($q2) use ($approvedRegIds) {
+                  $q2->where('cash_register_id', '>', 0);
+                  if (count($approvedRegIds)) $q2->whereIn('cash_register_id', $approvedRegIds);
+                  else $q2->whereRaw('1 = 0');
+              });
+        });
+        $return = $returnQ->selectRaw(implode(',', $query2))->get();
+        $total_return = Returns::whereDate('created_at', '>=' , $start_date)->whereDate('created_at', '<=' , $end_date)
+            ->where(function($q) use ($approvedRegIds) {
+                $q->whereNull('cash_register_id')
+                  ->orWhere(function($q2) use ($approvedRegIds) {
+                      $q2->where('cash_register_id', '>', 0);
+                      if (count($approvedRegIds)) $q2->whereIn('cash_register_id', $approvedRegIds);
+                      else $q2->whereRaw('1 = 0');
+                  });
+            })->count();
         $purchase_return = ReturnPurchase::whereDate('created_at', '>=' , $start_date)->whereDate('created_at', '<=' , $end_date)->selectRaw(implode(',', $query2))->get();
         $total_purchase_return = ReturnPurchase::whereDate('created_at', '>=' , $start_date)->whereDate('created_at', '<=' , $end_date)->count();
-        $expense = Expense::whereDate('created_at', '>=' , $start_date)->whereDate('created_at', '<=' , $end_date)->sum('amount');
-        $total_expense = Expense::whereDate('created_at', '>=' , $start_date)->whereDate('created_at', '<=' , $end_date)->count();
+        $expenseQ = Expense::whereDate('created_at', '>=' , $start_date)->whereDate('created_at', '<=' , $end_date);
+        $expenseQ->where(function($q) use ($approvedRegIds) {
+            $q->whereNull('cash_register_id')
+              ->orWhere(function($q2) use ($approvedRegIds) {
+                  $q2->where('cash_register_id', '>', 0);
+                  if (count($approvedRegIds)) $q2->whereIn('cash_register_id', $approvedRegIds);
+                  else $q2->whereRaw('1 = 0');
+              });
+        });
+        $expense = $expenseQ->sum('amount');
+        $total_expense = $expenseQ->count();
         $payroll = Payroll::whereDate('created_at', '>=' , $start_date)->whereDate('created_at', '<=' , $end_date)->sum('amount');
         $total_payroll = Payroll::whereDate('created_at', '>=' , $start_date)->whereDate('created_at', '<=' , $end_date)->count();
         $total_item = DB::table('product_warehouse')
@@ -671,35 +739,37 @@ class ReportController extends Controller
                     ])->count();
         $payment_recieved_number = DB::table('payments')->whereNotNull('sale_id')->whereDate('created_at', '>=' , $start_date)
             ->whereDate('created_at', '<=' , $end_date)->count();
-        $payment_recieved = DB::table('payments')->whereNotNull('sale_id')->whereDate('created_at', '>=' , $start_date)->whereDate('created_at', '<=' , $end_date)->sum('payments.amount');
+        $payment_recieved = DB::table('payments')->whereNotNull('sale_id')->whereDate('created_at', '>=' , $start_date)->whereDate('created_at', '<=' , $end_date)->where($gate)->sum('payments.amount');
         $credit_card_payment_sale = DB::table('payments')
                             ->where('paying_method', 'Credit Card')
                             ->whereNotNull('payments.sale_id')
                             ->whereDate('payments.created_at', '>=' , $start_date)
-                            ->whereDate('payments.created_at', '<=' , $end_date)->sum('payments.amount');
+                            ->whereDate('payments.created_at', '<=' , $end_date)
+                            ->where($gate)->sum('payments.amount');
         $cheque_payment_sale = DB::table('payments')
                             ->where('paying_method', 'Cheque')
                             ->whereNotNull('payments.sale_id')
                             ->whereDate('payments.created_at', '>=' , $start_date)
-                            ->whereDate('payments.created_at', '<=' , $end_date)->sum('payments.amount');
+                            ->whereDate('payments.created_at', '<=' , $end_date)
+                            ->where($gate)->sum('payments.amount');
         $gift_card_payment_sale = DB::table('payments')
                             ->where('paying_method', 'Gift Card')
                             ->whereNotNull('sale_id')
                             ->whereDate('created_at', '>=' , $start_date)
                             ->whereDate('created_at', '<=' , $end_date)
-                            ->sum('amount');
+                            ->where($gate)->sum('amount');
         $paypal_payment_sale = DB::table('payments')
                             ->where('paying_method', 'Paypal')
                             ->whereNotNull('sale_id')
                             ->whereDate('created_at', '>=' , $start_date)
                             ->whereDate('created_at', '<=' , $end_date)
-                            ->sum('amount');
+                            ->where($gate)->sum('amount');
         $deposit_payment_sale = DB::table('payments')
                             ->where('paying_method', 'Deposit')
                             ->whereNotNull('sale_id')
                             ->whereDate('created_at', '>=' , $start_date)
                             ->whereDate('created_at', '<=' , $end_date)
-                            ->sum('amount');
+                            ->where($gate)->sum('amount');
         $cash_payment_sale =  $payment_recieved - $credit_card_payment_sale - $cheque_payment_sale - $gift_card_payment_sale - $paypal_payment_sale - $deposit_payment_sale;
         $payment_sent_number = DB::table('payments')->whereNotNull('purchase_id')->whereDate('created_at', '>=' , $start_date)
             ->whereDate('created_at', '<=' , $end_date)->count();
@@ -724,11 +794,11 @@ class ReportController extends Controller
         $warehouse_expense = [];
         foreach ($lims_warehouse_all as $warehouse) {
             $warehouse_name[] = $warehouse->name;
-            $warehouse_sale[] = Sale::where('warehouse_id', $warehouse->id)->whereDate('created_at', '>=' , $start_date)->whereDate('created_at', '<=' , $end_date)->selectRaw(implode(',', $query2))->get();
+            $warehouse_sale[] = Sale::where('warehouse_id', $warehouse->id)->whereDate('created_at', '>=' , $start_date)->whereDate('created_at', '<=' , $end_date)->where($gate)->selectRaw(implode(',', $query2))->get();
             $warehouse_purchase[] = Purchase::where('warehouse_id', $warehouse->id)->whereDate('created_at', '>=' , $start_date)->whereDate('created_at', '<=' , $end_date)->selectRaw(implode(',', $query2))->get();
-            $warehouse_return[] = Returns::where('warehouse_id', $warehouse->id)->whereDate('created_at', '>=' , $start_date)->whereDate('created_at', '<=' , $end_date)->selectRaw(implode(',', $query2))->get();
+            $warehouse_return[] = Returns::where('warehouse_id', $warehouse->id)->whereDate('created_at', '>=' , $start_date)->whereDate('created_at', '<=' , $end_date)->where($gate)->selectRaw(implode(',', $query2))->get();
             $warehouse_purchase_return[] = ReturnPurchase::where('warehouse_id', $warehouse->id)->whereDate('created_at', '>=' , $start_date)->whereDate('created_at', '<=' , $end_date)->selectRaw(implode(',', $query2))->get();
-            $warehouse_expense[] = Expense::where('warehouse_id', $warehouse->id)->whereDate('created_at', '>=' , $start_date)->whereDate('created_at', '<=' , $end_date)->sum('amount');
+            $warehouse_expense[] = Expense::where('warehouse_id', $warehouse->id)->whereDate('created_at', '>=' , $start_date)->whereDate('created_at', '<=' , $end_date)->where($gate)->sum('amount');
         }
 
         return view('backend.report.profit_loss', compact('purchase', 'product_cost', 'product_tax', 'total_purchase', 'sale', 'total_sale', 'return', 'purchase_return', 'total_return', 'total_purchase_return', 'expense', 'payroll', 'total_expense', 'total_payroll', 'payment_recieved', 'payment_recieved_number', 'cash_payment_sale', 'cheque_payment_sale', 'credit_card_payment_sale', 'gift_card_payment_sale', 'paypal_payment_sale', 'deposit_payment_sale', 'payment_sent', 'payment_sent_number', 'cash_payment_purchase', 'cheque_payment_purchase', 'credit_card_payment_purchase', 'warehouse_name', 'warehouse_sale', 'warehouse_purchase', 'warehouse_return', 'warehouse_purchase_return', 'warehouse_expense', 'start_date', 'end_date'));

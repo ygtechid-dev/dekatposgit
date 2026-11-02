@@ -1,104 +1,96 @@
-#!/usr/bin/env bash
-# ============================================================
 # SalePro Multi-Store Cloner - VPS Setup
-# Target: Ubuntu + Nginx + PHP-FPM + MySQL
-# VPS: 150.109.22.82  user: ninja-76%-river (root password)
-# ============================================================
+# Jalankan: bash setup-vps.sh
+# Asumsi: SSH akses root VPS 150.109.22.82, PHP 8.3, Nginx, MySQL terinstall
+
 set -e
+echo "=== SalePro Cloner VPS Setup ==="
 
-VPS_IP="150.109.22.82"
-DOMAIN="dekatpos.com"
-CLONER_SUB="cloner"
-SSH="ssh root@${VPS_IP}"
-
-echo "=========================================================="
-echo "SalePro Multi-Store Cloner - VPS Setup"
-echo "VPS: ${VPS_IP}  Domain: ${DOMAIN}"
-echo "=========================================================="
-
-# Run everything locally on the VPS (assumes you've SSH'd in)
-# If running from your laptop: replace commands with ${SSH} 'cmd'
-
-echo ""
-echo "[1/6] Sistem update + PHP extensions"
+# 1. Update system
 apt-get update -qq
-apt-get install -y -qq php-fpm php-cli php-mysql php-curl php-gd php-xml php-zip php-mbstring php-bcmath mysql-server certbot nginx unzip
+apt-get install -y -qq php8.3-fpm php8.3-cli php8.3-mysql php8.3-xml php8.3-curl nginx mysql-server certbot python3-certbot-nginx unzip 2>&1 | tail -5
 
-echo ""
-echo "[2/6] Aktifkan PHP-FPM & MySQL"
-systemctl enable php8.1-fpm php8.1-cli
-systemctl enable mysql nginx
-systemctl start php8.1-fpm php8.1-cli
-systemctl start mysql nginx
+# 2. Buat folder cloner
+mkdir -p /var/www/salepro-cloner
+echo "Folder /var/www/salepro-cloner dibuat"
 
-echo ""
-echo "[3/6] Source SalePro code - taruh di /var/www/salepro"
+# 3. Cek code SalePro
 if [ ! -d /var/www/salepro ]; then
-    echo "  /var/www/salepro tidak ada. Clone dari git:"
-    echo "    cd /var/www && git clone <repo-salepro> salepro"
-    echo "  atau salin via: rsync -avh --delete <local>/App_Salepro/ root@${VPS_IP}:/var/www/salepro/"
+  echo "ERROR: /var/www/salepro tidak ada!"
+  echo "Upload dulu code SalePro:"
+  echo "  scp -r ~/App_Salepro root@150.109.22.82:/var/www/salepro"
+  echo "Pastikan /var/www/salepro/Database.sql dan /var/www/salepro/artisan ada"
+  exit 1
+else
+  echo "OK: /var/www/salepro ditemukan"
+  ls /var/www/salepro/artisan /var/www/salepro/Database.sql 2>&1 || echo "WARNING: artisan atau Database.sql tidak ada!"
 fi
 
-echo ""
-echo "[4/6] Install SalePro cloner ke /var/www/salepro-cloner"
-rsync -avh /Users/a/Sites/localhost/App_Salepro/salepro-cloner/ root@${VPS_IP}:/var/www/salepro-cloner/
-echo "  atau: cp -r ~/App_Salepro/salepro-cloner /var/www/salepro-cloner"
+# 4. Aktifkan PHP-FPM dan Nginx
+systemctl enable php8.3-fpm
+systemctl start php8.3-fpm
+systemctl enable nginx
+systemctl start nginx
 
+# 5. DNS (perlu di Namecheap):
 echo ""
-echo "[5/6] Nginx config untuk cloner"
-cat > /etc/nginx/conf.d/salepro-cloner.conf <<NGINX
+echo "=== LANGKAH MANUAL (Namecheap DNS) ==="
+echo "Tambahkan record berikut di Namecheap (Domain dekatpos.com -> Advanced DNS):"
+echo "  1. Host: *           Type: A   Value: 150.109.22.82   (wildcard, subdomain toko)"
+echo "  2. Host: cloner     Type: A   Value: 150.109.22.82   (untuk panel cloner)"
+echo ""
+echo "Wait 5-10 menit sampai DNS aktif, lalu test: dig cloner.dekatpos.com"
+
+# 6. Setup Nginx untuk cloner (HTTP dulu, SSL nanti)
+cat > /etc/nginx/conf.d/salepro-cloner.conf << 'NGINX_CLONER'
 server {
     listen 80;
-    server_name ${CLONER_SUB}.${DOMAIN};
-    return 301 https://\$host\$request_uri;
-}
-server {
-    listen 443 ssl http2;
-    server_name ${CLONER_SUB}.${DOMAIN};
-
-    ssl_certificate     /etc/letsencrypt/live/${CLONER_SUB}.${DOMAIN}/fullchain.pem;
-    ssl_certificate_key /etc/letsencrypt/live/${CLONER_SUB}.${DOMAIN}/privkey.pem;
+    server_name cloner.dekatpos.com www.cloner.dekatpos.com;
 
     root /var/www/salepro-cloner;
     index index.php;
 
-    location / { try_files \$uri \$uri/ /index.php?\$query_string; }
+    client_max_body_size 64M;
+
+    location / {
+        try_files $uri $uri/ /index.php?$query_string;
+    }
 
     location = /index.php {
-        fastcgi_pass unix:/run/php/php8.1-fpm.sock;
+        fastcgi_pass unix:/run/php/php8.3-fpm.sock;
         include /etc/nginx/fastcgi_params;
-        fastcgi_param SCRIPT_FILENAME \$realpath_root\$fastcgi_script_name;
-        fastcgi_param QUERY_STRING \$query_string;
-        fastcgi_param REQUEST_METHOD \$request_method;
+        fastcgi_param SCRIPT_FILENAME $realpath_root$fastcgi_script_name;
+        fastcgi_param QUERY_STRING $query_string;
+        fastcgi_param REQUEST_METHOD $request_method;
         fastcgi_param SCRIPT_NAME /index.php;
     }
+
     location ~ \.php$ { return 404; }
     location ~ /\.(?!well-known).* { deny all; }
 }
-NGINX
-echo "  /etc/nginx/conf.d/salepro-cloner.conf dibuat"
+NGINX_CLONER
+
+echo "Nginx config cloner ditulis"
+nginx -t && systemctl reload nginx
+echo "Nginx reloaded"
+
+# 7. Buat user MySQL untuk cloner
+read -p "Password MySQL untuk user 'cloner' (enter = default 'Cloner@2024'): " DB_PASS
+DB_PASS="${DB_PASS:-Cloner@2024}"
+mysql -u root -e "CREATE USER IF NOT EXISTS 'cloner'@'localhost' IDENTIFIED BY '$DB_PASS'; GRANT ALL PRIVILEGES ON *.* TO 'cloner'@'localhost' WITH GRANT OPTION; FLUSH PRIVILEGES;" 2>/dev/null || \
+mysql -u root --skip-grant-tables -e "CREATE USER IF NOT EXISTS 'cloner'@'localhost' IDENTIFIED BY '$DB_PASS'; GRANT ALL PRIVILEGES ON *.* TO 'cloner'@'localhost' WITH GRANT OPTION; FLUSH PRIVILEGES;" 2>/dev/null || \
+echo "WARNING: Buat user 'cloner' manual di MySQL"
+echo "User MySQL cloner dibuat dengan password: $DB_PASS"
 
 echo ""
-echo "[6/6] DNS + SSL"
-echo "  Pastikan Namecheap DNS wildcard:  *.${DOMAIN}  A  ${VPS_IP}"
-echo "  dan:  ${CLONER_SUB}.${DOMAIN}  A  ${VPS_IP}"
-echo "  Setelah DNS aktif, register SSL:"
-echo "    certbot --nginx -d ${CLONER_SUB}.${DOMAIN} --non-interactive --agree-tos -m admin@${DOMAIN}"
-
+echo "=== SETUP SELESAI ==="
 echo ""
-echo "=========================================================="
-echo "DONE. Buka: https://${CLONER_SUB}.${DOMAIN}"
-echo "=========================================================="
+echo "1. Copy file cloner ke VPS:"
+echo "   scp ~/App_Salepro/salepro-cloner/* root@150.109.22.82:/var/www/salepro-cloner/"
 echo ""
-echo "PENTING - sebelum akses, edit /var/www/salepro-cloner/index.php bagian CONFIG:"
-echo "  - PHP_FPM  (sesuai versi PHP di VPS, cek: php -v)"
-echo "  - DB_PASS  (password root MySQL VPS)"
-echo "  - BASE     (path code SalePro)"
-echo "  - REF_DB   (opsional: DB referensi utk clone schema)"
+echo "2. Edit /var/www/salepro-cloner/index.php:"
+echo "   define('DB_USER', 'cloner');"
+echo "   define('DB_PASS', '$DB_PASS');"
 echo ""
-echo "Workflow:"
-echo "  1. Buka https://${CLONER_SUB}.${DOMAIN}"
-echo "  2. Isi form: nama toko + subdomain + admin"
-echo "  3. Klik Buat Toko -> auto: DB, kode, .env, nginx, SSL"
-echo "  4. Akses: https://subdomain.${DOMAIN}"
+echo "3. Buka: http://cloner.dekatpos.com  (belum SSL dulu)"
+echo "   Setelah toko pertama dibuat, SSL akan otomatis dibuat certbot"
 echo ""

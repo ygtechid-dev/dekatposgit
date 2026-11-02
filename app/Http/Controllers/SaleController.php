@@ -29,7 +29,6 @@ use App\Models\PaymentWithPaypal;
 use App\Models\User;
 use App\Models\Variant;
 use App\Models\ProductVariant;
-use App\Models\CashRegister;
 use App\Models\Returns;
 use App\Models\ProductReturn;
 use App\Models\Expense;
@@ -2890,12 +2889,42 @@ class SaleController extends Controller
 
     public function todayProfit($warehouse_id)
     {
+        // Gate: hanya register yang sudah approved; transaksi tanpa register selalu masuk
+        $approvedRegIds = CashRegister::where('settle_status', 1)->pluck('id')->toArray();
+        $gate = function($q) use ($approvedRegIds) {
+            $q->whereNull('cash_register_id')
+              ->orWhere(function($q2) use ($approvedRegIds) {
+                  $q2->where('cash_register_id', '>', 0);
+                  if (count($approvedRegIds)) $q2->whereIn('cash_register_id', $approvedRegIds);
+                  else $q2->whereRaw('1 = 0');
+              });
+        };
+
         if($warehouse_id == 0)
-            $product_sale_data = Product_Sale::select(DB::raw('product_id, product_batch_id, sum(qty) as sold_qty, sum(total) as sold_amount'))->whereDate('created_at', date("Y-m-d"))->groupBy('product_id', 'product_batch_id')->get();
+            $product_sale_data = Product_Sale::join('sales', 'sales.id', '=', 'product_sales.sale_id')
+                ->select(DB::raw('product_sales.product_id, product_sales.product_batch_id, sum(product_sales.qty) as sold_qty, sum(product_sales.total) as sold_amount'))
+                ->whereDate('product_sales.created_at', date("Y-m-d"))
+                ->where(function($q) use ($approvedRegIds) {
+                    $q->whereNull('sales.cash_register_id')
+                      ->orWhere(function($q2) use ($approvedRegIds) {
+                          $q2->where('sales.cash_register_id', '>', 0);
+                          if (count($approvedRegIds)) $q2->whereIn('sales.cash_register_id', $approvedRegIds);
+                          else $q2->whereRaw('1 = 0');
+                      });
+                })
+                ->groupBy('product_sales.product_id', 'product_sales.product_batch_id')->get();
         else
             $product_sale_data = Sale::join('product_sales', 'sales.id', '=', 'product_sales.sale_id')
             ->select(DB::raw('product_sales.product_id, product_sales.product_batch_id, sum(product_sales.qty) as sold_qty, sum(product_sales.total) as sold_amount'))
             ->where('sales.warehouse_id', $warehouse_id)->whereDate('sales.created_at', date("Y-m-d"))
+            ->where(function($q) use ($approvedRegIds) {
+                $q->whereNull('sales.cash_register_id')
+                  ->orWhere(function($q2) use ($approvedRegIds) {
+                      $q2->where('sales.cash_register_id', '>', 0);
+                      if (count($approvedRegIds)) $q2->whereIn('sales.cash_register_id', $approvedRegIds);
+                      else $q2->whereRaw('1 = 0');
+                  });
+            })
             ->groupBy('product_sales.product_id', 'product_sales.product_batch_id')->get();
 
         $product_revenue = 0;
@@ -2950,7 +2979,14 @@ class SaleController extends Controller
         $data['product_revenue'] = $product_revenue;
         $data['product_cost'] = $product_cost;
         if($warehouse_id == 0)
-            $data['expense_amount'] = Expense::whereDate('created_at', date("Y-m-d"))->sum('amount');
+            $data['expense_amount'] = Expense::whereDate('created_at', date("Y-m-d"))->where(function($q) use ($approvedRegIds) {
+            $q->whereNull('cash_register_id')
+              ->orWhere(function($q2) use ($approvedRegIds) {
+                  $q2->where('cash_register_id', '>', 0);
+                  if (count($approvedRegIds)) $q2->whereIn('cash_register_id', $approvedRegIds);
+                  else $q2->whereRaw('1 = 0');
+              });
+        })->sum('amount');
         else
             $data['expense_amount'] = Expense::where('warehouse_id', $warehouse_id)->whereDate('created_at', date("Y-m-d"))->sum('amount');
 
