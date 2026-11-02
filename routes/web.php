@@ -13,6 +13,7 @@
 
 use App\Http\Controllers\AccountsController;
 use App\Http\Controllers\AddonInstallController;
+use App\Http\Controllers\AppDraftController;
 use App\Http\Controllers\AdjustmentController;
 use App\Http\Controllers\AttendanceController;
 use App\Http\Controllers\BillerController;
@@ -126,7 +127,7 @@ Auth::routes();
 Route::get('/documentation', [HomeController::class, 'documentation']);
 Route::get('/ecommerce-documentation', [HomeController::class, 'ecomDocumentation']);
 
-Route::post('/session-renew', [HomeController::class, 'sessionRenew'])->name('session');
+Route::match(['get', 'post'], '/session-renew', [HomeController::class, 'sessionRenew'])->name('session');
 
 Route::group(['middleware' => 'auth'], function() {
     Route::controller(HomeController::class)->group(function () {
@@ -135,6 +136,12 @@ Route::group(['middleware' => 'auth'], function() {
 });
 
 Route::group(['middleware' => ['common', 'auth', 'active']], function() {
+
+    Route::prefix('app-drafts')->group(function () {
+        Route::get('/', [AppDraftController::class, 'show'])->name('app-drafts.show');
+        Route::post('/', [AppDraftController::class, 'store'])->name('app-drafts.store');
+        Route::delete('/', [AppDraftController::class, 'destroy'])->name('app-drafts.destroy');
+    });
 
     // Languages Section
     Route::prefix('languages')->group(function () {
@@ -416,6 +423,7 @@ Route::group(['middleware' => ['common', 'auth', 'active']], function() {
             Route::get('product_suggestions', 'productSuggestions')->name('product_purchase.suggestions');
             Route::get('lims_product_search', 'limsProductSearch')->name('product_purchase.search');
             Route::post('add_payment', 'addPayment')->name('purchase.add-payment');
+            Route::post('add-selected-payment', 'addSelectedPayment')->name('purchase.add-selected-payment');
             Route::get('getpayment/{id}', 'getPayment')->name('purchase.get-payment');
             Route::post('updatepayment', 'updatePayment')->name('purchase.update-payment');
             Route::post('deletepayment', 'deletePayment')->name('purchase.delete-payment');
@@ -538,6 +546,7 @@ Route::group(['middleware' => ['common', 'auth', 'active']], function() {
             Route::post('supplier-quotation-data', 'supplierQuotationData');
             Route::post('customer-due-report', 'customerDueReportByDate')->name('report.customerDueByDate');
             Route::post('customer-due-report-data', 'customerDueReportData');
+            Route::get('supplier-due-report', 'supplierDueReportByDate');
             Route::post('supplier-due-report', 'supplierDueReportByDate')->name('report.supplierDueByDate');
             Route::post('supplier-due-report-data', 'supplierDueReportData');
         });

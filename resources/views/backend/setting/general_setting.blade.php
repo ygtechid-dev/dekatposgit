@@ -28,10 +28,41 @@
                                     <div class="form-group">
                                         <label>{{trans('file.System Logo')}} *</label>
                                         <input type="file" name="site_logo" class="form-control" value=""/>
+                                        @if($lims_general_setting_data && $lims_general_setting_data->site_logo)
+                                            <img src="{{url('logo', $lims_general_setting_data->site_logo)}}" class="mt-2" style="max-height: 45px;">
+                                        @endif
                                     </div>
                                     @if($errors->has('site_logo'))
                                    <span>
                                        <strong>{{ $errors->first('site_logo') }}</strong>
+                                    </span>
+                                    @endif
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="form-group">
+                                        <label>Logo Login</label>
+                                        <input type="file" name="login_logo" class="form-control" />
+                                        @if($lims_general_setting_data && ($lims_general_setting_data->login_logo ?? null))
+                                            <img src="{{url('logo', $lims_general_setting_data->login_logo)}}" class="mt-2" style="max-height: 45px;">
+                                        @endif
+                                    </div>
+                                    @if($errors->has('login_logo'))
+                                    <span>
+                                        <strong>{{ $errors->first('login_logo') }}</strong>
+                                    </span>
+                                    @endif
+                                </div>
+                                <div class="col-md-4">
+                                    <div class="form-group">
+                                        <label>Favicon</label>
+                                        <input type="file" name="favicon" class="form-control" />
+                                        @if($lims_general_setting_data && ($lims_general_setting_data->favicon ?? null))
+                                            <img src="{{url('logo', $lims_general_setting_data->favicon)}}" class="mt-2" style="max-height: 32px;">
+                                        @endif
+                                    </div>
+                                    @if($errors->has('favicon'))
+                                    <span>
+                                        <strong>{{ $errors->first('favicon') }}</strong>
                                     </span>
                                     @endif
                                 </div>

@@ -125,6 +125,17 @@ class HomeController extends Controller
         DB::reconnect();
         if(Auth::user()->role_id == 5) {
             $customer = Customer::select('id', 'points')->where('user_id', Auth::id())->first();
+            if (!$customer) {
+                $customer = (object) ['id' => null, 'points' => 0];
+                $lims_sale_data = collect();
+                $lims_payment_data = collect();
+                $lims_quotation_data = collect();
+                $lims_return_data = collect();
+                $lims_reward_point_setting_data = RewardPointSetting::select('per_point_amount')->latest()->first();
+
+                return view('backend.customer_index', compact('customer', 'lims_sale_data', 'lims_payment_data', 'lims_quotation_data', 'lims_return_data', 'lims_reward_point_setting_data'))
+                    ->with('not_permitted', 'Akun user ini belum terhubung ke data customer.');
+            }
             $lims_sale_data = Sale::with('warehouse')->where('customer_id', $customer->id)->orderBy('created_at', 'desc')->get();
             $lims_payment_data = DB::table('payments')
                            ->join('sales', 'payments.sale_id', '=', 'sales.id')
@@ -146,11 +157,11 @@ class HomeController extends Controller
         if(Auth::user()->role_id > 2 && cache()->get('general_setting')->staff_access == 'own')
         {
             $product_sale_data = Sale::join('product_sales', 'sales.id','=', 'product_sales.sale_id')
-                ->select(DB::raw('product_sales.product_id, product_sales.product_batch_id, product_sales.sale_unit_id, sum(product_sales.qty) as sold_qty, sum(product_sales.return_qty) as return_qty, sum(product_sales.total) as sold_amount'))
+                ->select(DB::raw('product_sales.product_id, product_sales.product_batch_id, product_sales.variant_id, product_sales.sale_unit_id, sum(product_sales.qty) as sold_qty, sum(product_sales.return_qty) as return_qty, sum(product_sales.total) as sold_amount'))
                 ->where('sales.user_id', Auth::id())
                 ->whereDate('sales.created_at', '>=' , $start_date)
                 ->whereDate('sales.created_at', '<=' , $end_date)
-                ->groupBy('product_sales.product_id', 'product_sales.product_batch_id')
+                ->groupBy('product_sales.product_id', 'product_sales.product_batch_id', 'product_sales.variant_id', 'product_sales.sale_unit_id')
                 ->get();
             $product_cost = $this->calculateAverageCOGS($product_sale_data);
             $revenue = Sale::whereDate('created_at', '>=' , $start_date)->where('user_id', Auth::id())->whereDate('created_at', '<=' , $end_date)->sum(DB::raw('grand_total - shipping_cost'));
@@ -164,10 +175,10 @@ class HomeController extends Controller
         else
         {
             $product_sale_data = Product_Sale::join('sales', 'product_sales.sale_id', '=', 'sales.id')
-                                ->select(DB::raw('product_sales.product_id, product_sales.product_batch_id, product_sales.sale_unit_id, sum(product_sales.qty) as sold_qty, sum(product_sales.return_qty) as return_qty, sum(product_sales.total) as sold_amount'))
+                                ->select(DB::raw('product_sales.product_id, product_sales.product_batch_id, product_sales.variant_id, product_sales.sale_unit_id, sum(product_sales.qty) as sold_qty, sum(product_sales.return_qty) as return_qty, sum(product_sales.total) as sold_amount'))
                                 ->whereDate('sales.created_at', '>=' , $start_date)
                                 ->whereDate('sales.created_at', '<=' , $end_date)
-                                ->groupBy('product_sales.product_id', 'product_sales.product_batch_id')
+                                ->groupBy('product_sales.product_id', 'product_sales.product_batch_id', 'product_sales.variant_id', 'product_sales.sale_unit_id')
                                 ->get();
             $product_cost = $this->calculateAverageCOGS($product_sale_data);
             $revenue = Sale::whereDate('created_at', '>=' , $start_date)->whereDate('created_at', '<=' , $end_date)->sum(DB::raw('grand_total - shipping_cost'));
@@ -375,11 +386,11 @@ class HomeController extends Controller
             config()->set('database.connections.mysql.strict', false);
             DB::reconnect();
             $product_sale_data = Sale::join('product_sales', 'sales.id','=', 'product_sales.sale_id')
-                ->select(DB::raw('product_sales.product_id, product_sales.product_batch_id, sale_unit_id, sum(product_sales.qty) as sold_qty, sum(product_sales.total) as sold_amount'))
+                ->select(DB::raw('product_sales.product_id, product_sales.product_batch_id, product_sales.variant_id, product_sales.sale_unit_id, sum(product_sales.qty) as sold_qty, sum(product_sales.return_qty) as return_qty, sum(product_sales.total) as sold_amount'))
                 ->where('sales.user_id', Auth::id())
                 ->whereDate('sales.created_at', '>=' , $start_date)
                 ->whereDate('sales.created_at', '<=' , $end_date)
-                ->groupBy('product_sales.product_id', 'product_sales.product_batch_id')
+                ->groupBy('product_sales.product_id', 'product_sales.product_batch_id', 'product_sales.variant_id', 'product_sales.sale_unit_id')
                 ->get();
             config()->set('database.connections.mysql.strict', true);
             DB::reconnect();
@@ -399,10 +410,10 @@ class HomeController extends Controller
             config()->set('database.connections.mysql.strict', false);
             DB::reconnect();
             $product_sale_data = Product_Sale::join('sales', 'product_sales.sale_id', '=', 'sales.id')
-                                ->select(DB::raw('product_sales.product_id, product_sales.product_batch_id, product_sales.sale_unit_id, sum(product_sales.qty) as sold_qty, sum(product_sales.total) as sold_amount'))
+                                ->select(DB::raw('product_sales.product_id, product_sales.product_batch_id, product_sales.variant_id, product_sales.sale_unit_id, sum(product_sales.qty) as sold_qty, sum(product_sales.return_qty) as return_qty, sum(product_sales.total) as sold_amount'))
                                 ->whereDate('sales.created_at', '>=' , $start_date)
                                 ->whereDate('sales.created_at', '<=' , $end_date)
-                                ->groupBy('product_sales.product_id', 'product_sales.product_batch_id')
+                                ->groupBy('product_sales.product_id', 'product_sales.product_batch_id', 'product_sales.variant_id', 'product_sales.sale_unit_id')
                                 ->get();
             config()->set('database.connections.mysql.strict', true);
             DB::reconnect();
@@ -567,6 +578,10 @@ class HomeController extends Controller
 
     public function sessionRenew(Request $request)
     {
-        return response()->json('success'); 
+        $request->session()->put('last_activity_ping', time());
+        return response()->json([
+            'status' => 'success',
+            'csrf_token' => csrf_token(),
+        ]);
     }
 }

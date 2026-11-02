@@ -831,6 +831,23 @@ $("table.order-list").on("click", ".edit-product", function() {
     edit();
 });
 
+function selectedSaleUnitCost() {
+    var unit_cost = parseFloat(cost[rowindex]) || 0;
+    if(product_type[pos] != 'standard')
+        return unit_cost;
+
+    var position = $('select[name="edit_unit"]').val();
+    var temp_operator = temp_unit_operator[position];
+    var temp_operation_value = parseFloat(temp_unit_operation_value[position]) || 1;
+
+    if(temp_operator == '*')
+        return unit_cost * temp_operation_value;
+    if(temp_operator == '/')
+        return temp_operation_value ? unit_cost / temp_operation_value : unit_cost;
+
+    return unit_cost;
+}
+
 //Update product
 $('button[name="update_btn"]').on("click", function() {
     if(is_imei[rowindex]) {
@@ -844,6 +861,13 @@ $('button[name="update_btn"]').on("click", function() {
 
     if (parseFloat(edit_discount) > parseFloat(edit_unit_price)) {
         alert('Invalid Discount Input!');
+        return;
+    }
+
+    var min_unit_cost = selectedSaleUnitCost();
+    var net_edit_price = (parseFloat(edit_unit_price) || 0) - (parseFloat(edit_discount) || 0);
+    if(min_unit_cost > 0 && net_edit_price + 0.0001 < min_unit_cost) {
+        alert('Harga jual tidak boleh di bawah HPP. Minimal: ' + min_unit_cost.toFixed({{$general_setting->decimal}}));
         return;
     }
 
@@ -963,7 +987,7 @@ function productSearch(data) {
                 var qty = data[15];
                 $('table.order-list tbody tr:nth-child(' + (rowindex + 1) + ') .qty').val(qty);
                 pos = product_code.indexOf(data[1]);
-                if(!data[11] && product_warehouse_price[pos]) {
+                if(!data[11] && data[18] != 'qty' && product_warehouse_price[pos]) {
                     product_price[rowindex] = parseFloat(product_warehouse_price[pos] * currency['exchange_rate']) + parseFloat(product_warehouse_price[pos] * currency['exchange_rate'] * customer_group_rate);
                 }
                 else{
@@ -1010,7 +1034,7 @@ function productSearch(data) {
                 $("table.order-list tbody").prepend(newRow);
                 rowindex = newRow.index();
 
-                if(!data[11] && product_warehouse_price[pos]) {
+                if(!data[11] && data[18] != 'qty' && product_warehouse_price[pos]) {
                     product_price.splice(rowindex, 0, parseFloat(product_warehouse_price[pos] * currency['exchange_rate']) + parseFloat(product_warehouse_price[pos] * currency['exchange_rate'] * customer_group_rate));
                 }
                 else {

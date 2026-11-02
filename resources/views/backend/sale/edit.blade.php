@@ -697,7 +697,8 @@
             }));
         },
         response: function(event, ui) {
-            if (ui.content.length == 1) {
+            var typed_term = $('#lims_productcodeSearch').val().trim().toLowerCase();
+            if (ui.content.length == 1 && ui.content[0].value.split(' (')[0].toLowerCase() == typed_term) {
                 var data = ui.content[0].value;
                 $(this).autocomplete( "close" );
                 productSearch(data);
@@ -708,6 +709,7 @@
         },
         select: function(event, ui) {
             var data = ui.item.value;
+            ui.item.value = '';
             productSearch(data);
         }
     });
@@ -867,7 +869,7 @@
                     var qty = data[15];
                     $('table.order-list tbody tr:nth-child(' + (rowindex + 1) + ') .qty').val(qty);
                     pos = product_code.indexOf(data[1]);
-                    if(!data[11] && product_warehouse_price[pos]) {
+                    if(!data[11] && data[18] != 'qty' && product_warehouse_price[pos]) {
                         product_price[rowindex] = parseFloat(product_warehouse_price[pos] * currencyExchangeRate) + parseFloat(product_warehouse_price[pos] * currencyExchangeRate * customer_group_rate);
                     }
                     else{
@@ -914,7 +916,7 @@
                     $("table.order-list tbody").prepend(newRow);
                     rowindex = newRow.index();
 
-                    if(!data[11] && product_warehouse_price[pos]) {
+                    if(!data[11] && data[18] != 'qty' && product_warehouse_price[pos]) {
                         product_price.splice(rowindex, 0, parseFloat(product_warehouse_price[pos] * currencyExchangeRate) + parseFloat(product_warehouse_price[pos] * currencyExchangeRate * customer_group_rate));
                     }
                     else {

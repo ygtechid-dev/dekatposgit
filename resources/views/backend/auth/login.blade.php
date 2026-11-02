@@ -3,13 +3,14 @@
   <head>
     <meta charset="utf-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
-    <title>{{$general_setting->site_title}}</title>
+    <title>{{ config('app.name') }}</title>
     <meta name="description" content="">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="robots" content="all,follow">
     <link rel="manifest" href="{{url('manifest.json')}}">
     @if(!config('database.connections.saleprosaas_landlord'))
-    <link rel="icon" type="image/png" href="{{url('logo', $general_setting->site_logo)}}" />
+    @php($app_favicon = !empty($general_setting->favicon) ? $general_setting->favicon : $general_setting->site_logo)
+    <link rel="icon" type="image/png" href="{{url('logo/'.$app_favicon)}}" />
     <!-- Bootstrap CSS-->
     <link rel="stylesheet" href="<?php echo asset('vendor/bootstrap/css/bootstrap.min.css') ?>" type="text/css">
     <!-- login stylesheet-->
@@ -18,7 +19,8 @@
     <link rel="preload" href="https://fonts.googleapis.com/css?family=Nunito:400,500,700" as="style" onload="this.onload=null;this.rel='stylesheet'">
     <noscript><link href="https://fonts.googleapis.com/css?family=Nunito:400,500,700" rel="stylesheet"></noscript>
     @else
-    <link rel="icon" type="image/png" href="{{url('../../logo', $general_setting->site_logo)}}" />
+    @php($app_favicon = !empty($general_setting->favicon) ? $general_setting->favicon : $general_setting->site_logo)
+    <link rel="icon" type="image/png" href="{{url('../../logo/'.$app_favicon)}}" />
     <!-- Bootstrap CSS-->
     <link rel="stylesheet" href="<?php echo asset('../../vendor/bootstrap/css/bootstrap.min.css') ?>" type="text/css">
     <!-- login stylesheet-->
@@ -34,10 +36,11 @@
         <div class="form-outer text-center d-flex align-items-center">
           <div class="form-inner">
             <div class="logo">
-                @if($general_setting->site_logo)
-                <img src="{{url('logo', $general_setting->site_logo)}}" width="110">
+                @php($login_logo = !empty($general_setting->login_logo) ? $general_setting->login_logo : $general_setting->site_logo)
+                @if($login_logo)
+                <img src="{{url('logo', $login_logo)}}" width="110">
                 @else
-                <span>{{$general_setting->site_title}}</span>
+                <span>{{ config('app.name') }}</span>
                 @endif
             </div>
             @if(session()->has('delete_message'))
@@ -72,13 +75,6 @@
               </div>
               <button type="submit" class="btn btn-primary btn-block">{{trans('file.LogIn')}}</button>
             </form>
-            @if(!env('USER_VERIFIED'))
-            <!-- This three button for demo only-->
-            <button type="submit" class="btn btn-success admin-btn">LogIn as Admin</button>
-            <button type="submit" class="btn btn-info staff-btn">LogIn as Staff</button>
-            <button type="submit" class="btn btn-dark customer-btn">LogIn as Customer</button>
-            <br><br>
-            @endif
             <a href="{{ route('password.request') }}" class="forgot-pass">{{trans('file.Forgot Password?')}}</a>
             <p class="register-section">{{trans('file.Do not have an account?')}}</p>
             <a href="{{url('register')}}" class="signup register-section">{{trans('file.Register')}}</a>
@@ -127,11 +123,6 @@
         $('body').removeClass('dark-mode');
         $('#switch-theme i').addClass('dripicons-brightness-max');
     }
-    $('.admin-btn').on('click', function(){
-        $("input[name='name']").focus().val('admin');
-        $("input[name='password']").focus().val('admin');
-    });
-    
     if ('serviceWorker' in navigator ) {
         window.addEventListener('load', function() {
             navigator.serviceWorker.register('/salepro/service-worker.js').then(function(registration) {
@@ -144,20 +135,6 @@
         });
     }
 
-    $('.admin-btn').on('click', function(){
-        $("input[name='name']").focus().val('admin');
-        $("input[name='password']").focus().val('admin');
-    });
-
-  $('.staff-btn').on('click', function(){
-      $("input[name='name']").focus().val('staff');
-      $("input[name='password']").focus().val('staff');
-  });
-
-  $('.customer-btn').on('click', function(){
-      $("input[name='name']").focus().val('james');
-      $("input[name='password']").focus().val('james');
-  });
   // ------------------------------------------------------- //
     // Material Inputs
     // ------------------------------------------------------ //

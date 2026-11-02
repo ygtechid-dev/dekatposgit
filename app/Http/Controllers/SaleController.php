@@ -86,6 +86,50 @@ class SaleController extends Controller
         $this->_smsModel = $smsModel;
     }
 
+    private function recalculateCashRegistersAfterSaleDeletion($cashRegisterIds)
+    {
+        $cashRegisterIds = array_filter(array_unique($cashRegisterIds));
+        foreach ($cashRegisterIds as $cashRegisterId) {
+            $cashRegister = CashRegister::find($cashRegisterId);
+            if (!$cashRegister) {
+                continue;
+            }
+
+            $cashPayment = (float) Payment::where([
+                ['cash_register_id', $cashRegisterId],
+                ['paying_method', 'Cash']
+            ])->sum('amount');
+            $totalSaleReturn = (float) Returns::where('cash_register_id', $cashRegisterId)->sum('grand_total');
+            $totalExpense = (float) Expense::where('cash_register_id', $cashRegisterId)->sum('amount');
+            $expectedCash = (float) $cashRegister->cash_in_hand + $cashPayment - ($totalSaleReturn + $totalExpense);
+
+            $cashRegister->expected_cash_amount = $expectedCash;
+            if (!$cashRegister->status) {
+                $depositAmount = $cashRegister->deposit_amount;
+                if ($depositAmount === null && $cashRegister->closing_cash_amount !== null) {
+                    $depositAmount = $cashRegister->closing_cash_amount;
+                    $cashRegister->deposit_amount = $depositAmount;
+                }
+                $cashRegister->cash_difference = (float) $depositAmount - $expectedCash;
+
+                if ($cashRegister->approval_status == 'approved') {
+                    try {
+                        JournalService::reverseForReference('cash_register_sale', $cashRegisterId);
+                        JournalService::reverseForReference('cash_register_deposit', $cashRegisterId);
+                    } catch (\Throwable $e) {
+                        \Log::error('Gagal reverse jurnal kasir setelah hapus sale #' . $cashRegisterId . ': ' . $e->getMessage());
+                    }
+                    $cashRegister->approval_status = 'pending';
+                    $cashRegister->approved_by = null;
+                    $cashRegister->approved_at = null;
+                    $cashRegister->approval_note = 'Setoran perlu approve ulang karena ada penjualan yang dihapus.';
+                }
+            }
+
+            $cashRegister->save();
+        }
+    }
+
     private function productWarehouseRow($productId, $warehouseId, $variantId = null, $productBatchId = null)
     {
         $query = Product_Warehouse::where([
@@ -142,6 +186,53 @@ class SaleController extends Controller
         }
 
         return (float) $productUnit->price > 0 ? (float) $productUnit->price : null;
+    }
+
+    private function saleCostForUnit($baseCost, $unitName)
+    {
+        $cost = (float) $baseCost;
+        if(!$unitName || $unitName == 'n/a')
+            return $cost;
+
+        $unit = Unit::where('unit_name', $unitName)->first();
+        if(!$unit)
+            return $cost;
+
+        if($unit->operator == '*')
+            return $cost * (float) $unit->operation_value;
+        if($unit->operator == '/')
+            return (float) $unit->operation_value ? $cost / (float) $unit->operation_value : $cost;
+
+        return $cost;
+    }
+
+    private function salePriceBelowCostMessage($data)
+    {
+        if(empty($data['product_id']) || empty($data['net_unit_price']))
+            return null;
+
+        foreach($data['product_id'] as $key => $productId) {
+            $product = Product::find($productId);
+            if(!$product)
+                continue;
+
+            $baseCost = (float) $product->cost;
+            $productCode = $data['product_code'][$key] ?? null;
+            if($product->is_variant && $productCode) {
+                $variant = ProductVariant::FindExactProductWithCode($product->id, $productCode)->first();
+                if($variant)
+                    $baseCost += (float) $variant->additional_cost;
+            }
+
+            $unitCost = $this->saleCostForUnit($baseCost, $data['sale_unit'][$key] ?? null);
+            $netPrice = (float) $data['net_unit_price'][$key];
+
+            if($unitCost > 0 && $netPrice + 0.0001 < $unitCost) {
+                return 'Harga jual "' . $product->name . '" tidak boleh di bawah HPP. Minimal: ' . number_format($unitCost, config('decimal'), ',', '.') . ', harga input: ' . number_format($netPrice, config('decimal'), ',', '.') . '.';
+            }
+        }
+
+        return null;
     }
 
     public function index(Request $request)
@@ -212,7 +303,7 @@ class SaleController extends Controller
     public function saleData(Request $request)
     {
         // Column indices must match resources/views/backend/sale/index.blade.php's
-        // <thead> order (0 = checkbox, 1 = date, 2 = reference, 3 = Biller,
+        // <thead> order (0 = checkbox, 1 = date, 2 = reference, 3 = Kasir,
         // 4 = customer, 5 = Sale Status, 6 = Payment Status, 7 = Delivery
         // Status, 8 = grand total, 9 = Returned Amount, 10 = Paid, 11 = Due).
         // A "Delivery Status" column was added at index 7 without updating
@@ -290,6 +381,7 @@ class SaleController extends Controller
             $search = $request->input('search.value');
             $q = Sale::join('customers', 'sales.customer_id', '=', 'customers.id')
                 ->join('billers', 'sales.biller_id', '=', 'billers.id')
+                ->leftJoin('users', 'sales.user_id', '=', 'users.id')
                 ->whereDate('sales.created_at', '=' , date('Y-m-d', strtotime(str_replace('/', '-', $search))))
                 ->offset($start)
                 ->limit($limit)
@@ -311,7 +403,7 @@ class SaleController extends Controller
                             ['sales.user_id', Auth::id()]
                         ])
                         ->orwhere([
-                            ['billers.name', 'LIKE', "%{$search}%"],
+                            ['users.name', 'LIKE', "%{$search}%"],
                             ['sales.user_id', Auth::id()]
                         ]);
                 foreach ($field_names as $key => $field_name) {
@@ -340,7 +432,7 @@ class SaleController extends Controller
                             ['sales.warehouse_id', Auth::user()->warehouse_id]
                         ])
                         ->orwhere([
-                            ['billers.name', 'LIKE', "%{$search}%"],
+                            ['users.name', 'LIKE', "%{$search}%"],
                             ['sales.warehouse_id', Auth::user()->warehouse_id]
                         ]);
                 foreach ($field_names as $key => $field_name) {
@@ -358,7 +450,7 @@ class SaleController extends Controller
                         ->orwhere('sales.reference_no', 'LIKE', "%{$search}%")
                         ->orwhere('customers.name', 'LIKE', "%{$search}%")
                         ->orwhere('customers.phone_number', 'LIKE', "%{$search}%")
-                        ->orwhere('billers.name', 'LIKE', "%{$search}%");
+                        ->orwhere('users.name', 'LIKE', "%{$search}%");
                 foreach ($field_names as $key => $field_name) {
                     $q = $q->orwhere('sales.' . $field_name, 'LIKE', "%{$search}%");
                 }
@@ -376,11 +468,11 @@ class SaleController extends Controller
                 $nestedData['date'] = date(config('date_format').' h:i:s', strtotime($sale->created_at));
                 //$nestedData['date'] = $sale->created_at;
                 $nestedData['reference_no'] = $sale->reference_no;
-                // Guard: kalau biller/customer sudah dihapus tapi transaksi lama
+                // Guard: kalau kasir/customer sudah dihapus tapi transaksi lama
                 // masih mereferensikan id-nya, ->name di objek null akan bikin
                 // seluruh request sale-data gagal (500) dan DataTables cuma
                 // menampilkan "Ajax error" tanpa detail.
-                $nestedData['biller'] = $sale->biller ? $sale->biller->name : 'N/A';
+                $nestedData['biller'] = $sale->user ? $sale->user->name : 'N/A';
                 $nestedData['customer'] = $sale->customer
                     ? ($sale->customer->name.'<br>'.$sale->customer->phone_number.'<input type="hidden" class="deposit" value="'.($sale->customer->deposit - $sale->customer->expense).'" />'.'<input type="hidden" class="points" value="'.$sale->customer->points.'" />')
                     : 'N/A';
@@ -633,6 +725,12 @@ class SaleController extends Controller
             else {
                 if(!isset($data['reference_no']))
                     $data['reference_no'] = 'sr-' . date("Ymd") . '-'. date("his");
+            }
+
+            if($message = $this->salePriceBelowCostMessage($data)) {
+                if(!empty($data['pos']))
+                    return response()->json(['error' => $message], 422);
+                return redirect()->back()->withInput()->with('not_permitted', $message);
             }
 
             $document = $request->document;
@@ -1778,6 +1876,7 @@ class SaleController extends Controller
         $product[] = $qty;
         $product[] = $lims_product_data->wholesale_price;
         $product[] = $lims_product_data->cost;
+        $product[] = $lims_product_data->price_mode;
         return $product;
 
     }
@@ -2102,6 +2201,8 @@ class SaleController extends Controller
         //return dd($data);
         $document = $request->document;
         $lims_sale_data = Sale::find($id);
+        if($message = $this->salePriceBelowCostMessage($data))
+            return redirect()->back()->withInput()->with('not_permitted', $message);
 
         if ($document) {
             $v = Validator::make(
@@ -3186,8 +3287,15 @@ class SaleController extends Controller
     public function deleteBySelection(Request $request)
     {
         $sale_id = $request['saleIdArray'];
+        $affectedCashRegisterIds = [];
         foreach ($sale_id as $id) {
             $lims_sale_data = Sale::find($id);
+            if (!$lims_sale_data) {
+                continue;
+            }
+            if ($lims_sale_data->cash_register_id) {
+                $affectedCashRegisterIds[] = $lims_sale_data->cash_register_id;
+            }
             $return_ids = Returns::where('sale_id', $id)->pluck('id')->toArray();
             if(count($return_ids)) {
                 ProductReturn::whereIn('return_id', $return_ids)->delete();
@@ -3311,6 +3419,7 @@ class SaleController extends Controller
             $this->fileDelete('documents/sale/', $lims_sale_data->document);
 
         }
+        $this->recalculateCashRegistersAfterSaleDeletion($affectedCashRegisterIds);
         return 'Sale deleted successfully!';
     }
 
@@ -3318,6 +3427,10 @@ class SaleController extends Controller
     {
         $url = url()->previous();
         $lims_sale_data = Sale::find($id);
+        if (!$lims_sale_data) {
+            return Redirect::to($url)->with('not_permitted', 'Sale data not found');
+        }
+        $affectedCashRegisterIds = $lims_sale_data->cash_register_id ? [$lims_sale_data->cash_register_id] : [];
         $return_ids = Returns::where('sale_id', $id)->pluck('id')->toArray();
         if(count($return_ids)) {
             ProductReturn::whereIn('return_id', $return_ids)->delete();
@@ -3450,6 +3563,7 @@ class SaleController extends Controller
         } catch (\Exception $e) {}
         $lims_sale_data->delete();
         $this->fileDelete('documents/sale/', $lims_sale_data->document);
+        $this->recalculateCashRegistersAfterSaleDeletion($affectedCashRegisterIds);
 
         return Redirect::to($url)->with('not_permitted', $message);
     }

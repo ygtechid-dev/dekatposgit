@@ -139,7 +139,7 @@
                                         <div class="col-md-4 form-group">
                                                 <label>{{trans('file.Product Unit')}} *</strong> </label>
                                                 <div class="input-group">
-                                                  <select required class="form-control selectpicker" name="unit_id">
+                                                  <select required class="form-control selectpicker" data-live-search="true" data-live-search-style="begins" title="Select Product Unit..." name="unit_id">
                                                     <option value="" disabled selected>Select Product Unit...</option>
                                                     @foreach($lims_unit_list as $unit)
                                                         @if($unit->base_unit==null)
@@ -160,7 +160,7 @@
                                         <div class="col-md-4">
                                                 <label>Satuan Jual yang Diizinkan</label>
                                                 <div class="input-group">
-                                                  <select class="form-control selectpicker" name="product_sale_unit_ids[]" multiple data-actions-box="true" title="Pilih satuan jual...">
+                                                  <select class="form-control selectpicker" name="product_sale_unit_ids[]" multiple data-actions-box="true" data-live-search="true" data-live-search-style="contains" data-size="10" title="Pilih satuan jual...">
                                                   </select>
                                               </div>
                                         </div>
@@ -240,8 +240,21 @@
 
                                 <div id="price-mode-table-wrap" class="col-md-12" style="display:none">
                                     <label class="mt-2">Harga per Satuan</label>
+                                    <style>
+                                        .price-grid-table th,
+                                        .price-grid-table td{border:1px solid #2f3542!important;vertical-align:middle;white-space:nowrap}
+                                        .price-grid-table thead th{background:#f3f5f8;color:#2f3542;font-weight:700;text-align:center}
+                                        .price-grid-table .pg-basic,
+                                        .price-grid-table .pg-basic input{background:#d9d9d9}
+                                        .price-grid-table .pg-tier-a,
+                                        .price-grid-table .pg-tier-a input{background:#fff}
+                                        .price-grid-table .pg-tier-b,
+                                        .price-grid-table .pg-tier-b input{background:#d9d9d9}
+                                        .price-grid-table .pg-sep{border-right:3px solid #000!important}
+                                        .price-grid-table input{border-color:#aeb4bf}
+                                    </style>
                                     <div class="table-responsive">
-                                        <table id="price-mode-table" class="table table-bordered table-sm" style="min-width: 1100px;">
+                                        <table id="price-mode-table" class="table table-bordered table-sm price-grid-table" style="min-width: 1100px;">
                                             <thead id="price-mode-table-head"></thead>
                                             <tbody id="price-mode-table-body"></tbody>
                                         </table>
@@ -1596,18 +1609,20 @@
             '<th style="min-width:100px">Jns Satuan</th>' +
             '<th style="min-width:100px">Jml Konversi</th>' +
             '<th style="min-width:80px">Poin</th>' +
-            '<th style="min-width:90px">Komisi</th>' +
-            '<th style="min-width:130px">Harga Pokok</th>' +
-            '<th style="min-width:90px">Proc(%)</th>' +
-            '<th style="min-width:130px">Harga Jual</th>';
+            '<th class="pg-sep" style="min-width:90px">Komisi</th>' +
+            '<th class="pg-basic" style="min-width:130px">Harga Pokok</th>' +
+            '<th class="pg-basic" style="min-width:90px">Proc(%)</th>' +
+            '<th class="pg-basic pg-sep" style="min-width:130px">Harga Jual</th>';
         if (mode == 'level') {
             $.each(limsCustomerGroupList, function(i, group) {
-                head += '<th style="min-width:100px">Proc ' + group.name + ' (%)</th><th style="min-width:130px">HJ ' + group.name + '</th>';
+                var groupClass = (i % 2 == 0) ? 'pg-tier-a' : 'pg-tier-b';
+                head += '<th class="' + groupClass + '" style="min-width:100px">Proc ' + group.name + ' (%)</th><th class="' + groupClass + ' pg-sep" style="min-width:130px">HJ ' + group.name + '</th>';
             });
         }
         if (mode == 'qty') {
             for (var t = 1; t <= 4; t++) {
-                head += '<th style="min-width:100px">Jumlah ' + t + '</th><th style="min-width:100px">Proc' + t + ' (%)</th><th style="min-width:130px">Harga ' + t + '</th>';
+                var tierClass = (t % 2 == 1) ? 'pg-tier-a' : 'pg-tier-b';
+                head += '<th class="' + tierClass + '" style="min-width:100px">Jumlah ' + t + '</th><th class="' + tierClass + '" style="min-width:100px">Proc' + t + ' (%)</th><th class="' + tierClass + ' pg-sep" style="min-width:130px">Harga ' + t + '</th>';
             }
         }
         head += '</tr>';
@@ -1623,24 +1638,26 @@
         row += '<td>' + (unit.is_base ? 'Satuan Dasar' : 'Konversi') + '</td>';
         row += '<td>' + (parseFloat(unit.conversion) || 1) + '</td>';
         row += '<td><input type="number" step="any" class="form-control form-control-sm base-point" name="' + name + '[point]" value="' + (existing.point || 0) + '"></td>';
-        row += '<td><input type="number" step="any" class="form-control form-control-sm base-commission" name="' + name + '[commission]" value="' + (existing.commission || 0) + '"></td>';
-        row += '<td><input type="text" inputmode="decimal" autocomplete="off" class="form-control form-control-sm money-input base-cost" name="' + name + '[cost]" value="' + moneyDisplay(existing.cost || 0) + '"></td>';
-        row += '<td><input type="number" step="any" class="form-control form-control-sm base-markup" name="' + name + '[markup_percent]" value="' + (existing.markup_percent || 0) + '"></td>';
-        row += '<td><input type="text" inputmode="decimal" autocomplete="off" class="form-control form-control-sm money-input base-price" name="' + name + '[price]" value="' + moneyDisplay(existing.price || 0) + '"></td>';
+        row += '<td class="pg-sep"><input type="number" step="any" class="form-control form-control-sm base-commission" name="' + name + '[commission]" value="' + (existing.commission || 0) + '"></td>';
+        row += '<td class="pg-basic"><input type="text" inputmode="decimal" autocomplete="off" class="form-control form-control-sm money-input base-cost" name="' + name + '[cost]" value="' + moneyDisplay(existing.cost || 0) + '"></td>';
+        row += '<td class="pg-basic"><input type="number" step="any" class="form-control form-control-sm base-markup" name="' + name + '[markup_percent]" value="' + (existing.markup_percent || 0) + '"></td>';
+        row += '<td class="pg-basic pg-sep"><input type="text" inputmode="decimal" autocomplete="off" class="form-control form-control-sm money-input base-price" name="' + name + '[price]" value="' + moneyDisplay(existing.price || 0) + '"></td>';
 
         if (mode == 'level') {
             $.each(limsCustomerGroupList, function(i, group) {
                 var lvl = (existing.level && existing.level[group.id]) ? existing.level[group.id] : {};
-                row += '<td><input type="number" step="any" class="form-control form-control-sm level-markup" data-group-id="' + group.id + '" name="' + name + '[level][' + group.id + '][markup_percent]" value="' + (lvl.markup_percent || 0) + '"></td>';
-                row += '<td><input type="text" inputmode="decimal" autocomplete="off" class="form-control form-control-sm money-input level-price" data-group-id="' + group.id + '" name="' + name + '[level][' + group.id + '][price]" value="' + moneyDisplay(lvl.price || 0) + '"></td>';
+                var groupClass = (i % 2 == 0) ? 'pg-tier-a' : 'pg-tier-b';
+                row += '<td class="' + groupClass + '"><input type="number" step="any" class="form-control form-control-sm level-markup" data-group-id="' + group.id + '" name="' + name + '[level][' + group.id + '][markup_percent]" value="' + (lvl.markup_percent || 0) + '"></td>';
+                row += '<td class="' + groupClass + ' pg-sep"><input type="text" inputmode="decimal" autocomplete="off" class="form-control form-control-sm money-input level-price" data-group-id="' + group.id + '" name="' + name + '[level][' + group.id + '][price]" value="' + moneyDisplay(lvl.price || 0) + '"></td>';
             });
         }
         if (mode == 'qty') {
             for (var t = 1; t <= 4; t++) {
                 var tier = (existing.tier && existing.tier[t]) ? existing.tier[t] : {};
-                row += '<td><input type="number" step="any" class="form-control form-control-sm tier-minqty" data-tier-no="' + t + '" name="' + name + '[tier][' + t + '][min_qty]" value="' + (tier.min_qty || 0) + '"></td>';
-                row += '<td><input type="number" step="any" class="form-control form-control-sm tier-markup" data-tier-no="' + t + '" name="' + name + '[tier][' + t + '][markup_percent]" value="' + (tier.markup_percent || 0) + '"></td>';
-                row += '<td><input type="text" inputmode="decimal" autocomplete="off" class="form-control form-control-sm money-input tier-price" data-tier-no="' + t + '" name="' + name + '[tier][' + t + '][price]" value="' + moneyDisplay(tier.price || 0) + '"></td>';
+                var tierClass = (t % 2 == 1) ? 'pg-tier-a' : 'pg-tier-b';
+                row += '<td class="' + tierClass + '"><input type="number" step="any" class="form-control form-control-sm tier-minqty" data-tier-no="' + t + '" name="' + name + '[tier][' + t + '][min_qty]" value="' + (tier.min_qty || 0) + '"></td>';
+                row += '<td class="' + tierClass + '"><input type="number" step="any" class="form-control form-control-sm tier-markup" data-tier-no="' + t + '" name="' + name + '[tier][' + t + '][markup_percent]" value="' + (tier.markup_percent || 0) + '"></td>';
+                row += '<td class="' + tierClass + ' pg-sep"><input type="text" inputmode="decimal" autocomplete="off" class="form-control form-control-sm money-input tier-price" data-tier-no="' + t + '" name="' + name + '[tier][' + t + '][price]" value="' + moneyDisplay(tier.price || 0) + '"></td>';
             }
         }
         row += '</tr>';

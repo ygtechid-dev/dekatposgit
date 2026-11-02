@@ -22,7 +22,7 @@
                         <input type="hidden" name="ending_date" value="{{$ending_date}}" />
                     </div>
                 </div>
-                <div class="col-md-3 @if(\Auth::user()->role_id > 2){{'d-none'}}@endif">
+                <div class="col-md-2 @if(\Auth::user()->role_id > 2){{'d-none'}}@endif">
                     <div class="form-group">
                         <label><strong>{{trans('file.Warehouse')}}</strong></label>
                         <select id="warehouse_id" name="warehouse_id" class="selectpicker form-control" data-live-search="true" data-live-search-style="begins" >
@@ -33,7 +33,18 @@
                         </select>
                     </div>
                 </div>
-                <div class="col-md-3">
+                <div class="col-md-2">
+                    <div class="form-group">
+                        <label><strong>{{trans('file.Supplier')}}</strong></label>
+                        <select id="supplier-id" name="supplier_id" class="selectpicker form-control" data-live-search="true" data-live-search-style="contains" data-size="10">
+                            <option value="0">{{trans('file.All')}} {{trans('file.Supplier')}}</option>
+                            @foreach($lims_supplier_list as $supplier)
+                                <option value="{{$supplier->id}}">{{$supplier->name}}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                </div>
+                <div class="col-md-2">
                     <div class="form-group">
                         <label><strong>{{trans('file.Purchase Status')}}</strong></label>
                         <select id="purchase-status" class="form-control" name="purchase_status">
@@ -45,7 +56,7 @@
                         </select>
                     </div>
                 </div>
-                <div class="col-md-3">
+                <div class="col-md-2">
                     <div class="form-group">
                         <label><strong>{{trans('file.Payment Status')}}</strong></label>
                         <select id="payment-status" class="form-control" name="payment_status">
@@ -176,6 +187,43 @@
     </div>
 </div>
 
+<div id="selected-payment" tabindex="-1" role="dialog" aria-hidden="true" class="modal fade text-left">
+    <div role="document" class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title">Bayar Pembelian Terpilih</h5>
+                <button type="button" data-dismiss="modal" aria-label="Close" class="close"><span aria-hidden="true"><i class="dripicons-cross"></i></span></button>
+            </div>
+            <div class="modal-body">
+                {!! Form::open(['route' => 'purchase.add-selected-payment', 'method' => 'post', 'id' => 'selected-payment-form']) !!}
+                    <input type="hidden" name="purchase_ids">
+                    <div class="form-group">
+                        <label>Pembelian Dipilih</label>
+                        <input type="text" name="selected_count" class="form-control" readonly data-draft-ignore>
+                    </div>
+                    <div class="form-group">
+                        <label>Total yang Dibayar</label>
+                        <input type="text" name="selected_total" class="form-control" readonly data-draft-ignore>
+                    </div>
+                    <div class="form-group">
+                        <label>{{trans('file.Account')}} *</label>
+                        <select class="form-control selectpicker" name="account_id" data-live-search="true" data-live-search-style="contains" data-size="10" required>
+                            @foreach($lims_account_list as $account)
+                                <option value="{{$account->id}}" @if($account->is_default) selected @endif>{{$account->coa_label}}</option>
+                            @endforeach
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>{{trans('file.Payment Note')}}</label>
+                        <textarea rows="3" class="form-control" name="payment_note"></textarea>
+                    </div>
+                    <button type="submit" class="btn btn-primary"><i class="fa fa-money"></i> Bayar Lunas</button>
+                {{ Form::close() }}
+            </div>
+        </div>
+    </div>
+</div>
+
 <div id="add-payment" tabindex="-1" role="dialog" aria-labelledby="exampleModalLabel" aria-hidden="true" class="modal fade text-left">
     <div role="document" class="modal-dialog">
         <div class="modal-content">
@@ -189,11 +237,11 @@
                         <input type="hidden" name="balance">
                         <div class="col-md-6">
                             <label>{{trans('file.Recieved Amount')}} *</label>
-                            <input type="text" name="paying_amount" class="form-control numkey"  step="any" required>
+                            <input type="text" name="paying_amount" class="form-control numkey money-display-input" inputmode="decimal" required>
                         </div>
                         <div class="col-md-6">
                             <label>{{trans('file.Paying Amount')}} *</label>
-                            <input type="text" id="amount" name="amount" class="form-control"  step="any" required>
+                            <input type="text" id="amount" name="amount" class="form-control money-display-input" inputmode="decimal" required>
                         </div>
                         <div class="col-md-6 mt-1">
                             <label>{{trans('file.Change')}} : </label>
@@ -221,7 +269,7 @@
                     </div>
                     <div class="form-group">
                         <label> {{trans('file.Account')}}</label>
-                        <select class="form-control selectpicker" name="account_id">
+                        <select class="form-control selectpicker" name="account_id" data-live-search="true" data-live-search-style="contains" data-size="10">
                         @foreach($lims_account_list as $account)
                             @if($account->is_default)
                             <option selected value="{{$account->id}}">{{$account->coa_label}}</option>
@@ -257,11 +305,11 @@
                     <div class="row">
                         <div class="col-md-6">
                             <label>{{trans('file.Recieved Amount')}} *</label>
-                            <input type="text" name="edit_paying_amount" class="form-control numkey"  step="any" required>
+                            <input type="text" name="edit_paying_amount" class="form-control numkey money-display-input" inputmode="decimal" required>
                         </div>
                         <div class="col-md-6">
                             <label>{{trans('file.Paying Amount')}} *</label>
-                            <input type="text" name="edit_amount" class="form-control"  step="any" required>
+                            <input type="text" name="edit_amount" class="form-control money-display-input" inputmode="decimal" required>
                         </div>
                         <div class="col-md-6 mt-1">
                             <label>{{trans('file.Change')}} : </label>
@@ -289,7 +337,7 @@
                     </div>
                     <div class="form-group">
                         <label> {{trans('file.Account')}}</label>
-                        <select class="form-control selectpicker" name="account_id">
+                        <select class="form-control selectpicker" name="account_id" data-live-search="true" data-live-search-style="contains" data-size="10">
                         @foreach($lims_account_list as $account)
                             <option value="{{$account->id}}">{{$account->coa_label}}</option>
                         @endforeach
@@ -339,6 +387,7 @@
     var starting_date = <?php echo json_encode($starting_date); ?>;
     var ending_date = <?php echo json_encode($ending_date); ?>;
     var warehouse_id = <?php echo json_encode($warehouse_id); ?>;
+    var supplier_id = <?php echo json_encode($supplier_id); ?>;
     var purchase_status = <?php echo json_encode($purchase_status); ?>;
     var payment_status = <?php echo json_encode($payment_status); ?>;
 
@@ -368,6 +417,7 @@
     });
 
     $("#warehouse_id").val(warehouse_id);
+    $("#supplier-id").val(supplier_id);
     $("#purchase-status").val(purchase_status);
     $("#payment-status").val(payment_status);
 
@@ -420,9 +470,9 @@
         var purchase_id = $(this).data('id').toString();
         var balance = $('table.purchase-list tbody tr:nth-child(' + (rowindex + 1) + ')').find('td:nth-child(9)').text();
         balance = parseLocalizedNumber(balance);
-        $('input[name="amount"]').val(balance);
+        $('input[name="amount"]').val(formatLocalizedNumber(balance));
         $('input[name="balance"]').val(balance);
-        $('input[name="paying_amount"]').val(balance);
+        $('input[name="paying_amount"]').val(formatLocalizedNumber(balance));
         $('input[name="purchase_id"]').val(purchase_id);
     });
 
@@ -495,8 +545,8 @@
                 }
                 $('input[name="edit_date"]').val(payment_date[index]);
                 $("#payment_reference").html(payment_reference[index]);
-                $('input[name="edit_amount"]').val(paid_amount[index]);
-                $('input[name="edit_paying_amount"]').val(paying_amount[index]);
+                $('input[name="edit_amount"]').val(formatLocalizedNumber(paid_amount[index]));
+                $('input[name="edit_paying_amount"]').val(formatLocalizedNumber(paying_amount[index]));
                 $('.change').text(change[index]);
                 $('textarea[name="edit_payment_note"]').val(payment_note[index]);
                 return false;
@@ -581,6 +631,7 @@
                 starting_date: starting_date,
                 ending_date: ending_date,
                 warehouse_id: warehouse_id,
+                supplier_id: supplier_id,
                 purchase_status: purchase_status,
                 payment_status: payment_status
             },
@@ -630,6 +681,40 @@
         'lengthMenu': [[10, 25, 50, -1], [10, 25, 50, "All"]],
         dom: '<"row"lfB>rtip',
         buttons: [
+            {
+                text: '<i title="Bayar pembelian terpilih" class="fa fa-money"></i>',
+                className: 'buttons-selected-payment',
+                action: function (e, dt) {
+                    var selectedRows = dt.rows({ selected: true }).data().toArray();
+                    if (!selectedRows.length) {
+                        alert('Pilih minimal satu pembelian yang akan dibayar.');
+                        return;
+                    }
+
+                    var ids = [];
+                    var totalDue = 0;
+                    var invalidReference = null;
+                    selectedRows.forEach(function(row) {
+                        var due = parseLocalizedNumber(row.due);
+                        if (due <= 0 || String(row.purchase_status).indexOf('Diterima') === -1 && String(row.purchase_status).indexOf('Received') === -1 && String(row.purchase_status).indexOf('Recieved') === -1) {
+                            invalidReference = invalidReference || row.reference_no;
+                        }
+                        ids.push(row.id);
+                        totalDue += due;
+                    });
+                    if (invalidReference) {
+                        alert('Pembelian ' + invalidReference + ' belum diterima atau sudah lunas.');
+                        return;
+                    }
+
+                    var $modal = $('#selected-payment');
+                    $modal.find('input[name="purchase_ids"]').val(JSON.stringify(ids));
+                    $modal.find('input[name="selected_count"]').val(ids.length + ' transaksi');
+                    $modal.find('input[name="selected_total"]').val(formatLocalizedNumber(totalDue));
+                    $modal.find('.selectpicker').selectpicker('refresh');
+                    $modal.modal('show');
+                }
+            },
             {
                 extend: 'pdf',
                 text: '<i title="export to pdf" class="fa fa-file-pdf-o"></i>',
@@ -887,6 +972,8 @@
 
     if(all_permission.indexOf("purchases-delete") == -1)
         $('.buttons-delete').addClass('d-none');
+    if(all_permission.indexOf("purchase-payment-add") == -1)
+        $('.buttons-selected-payment').addClass('d-none');
 
 
 </script>

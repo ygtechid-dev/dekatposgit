@@ -120,14 +120,14 @@
                             <input type="hidden" name="cash_register_id">
                             <div class="form-group">
                                 <label>{{ \Auth::user()->role_id <= 2 ? 'Uang Fisik Dihitung *' : 'Uang Fisik Dihitung / Setor Kasir *' }}</label>
-                                <input type="number" step="any" name="closing_cash_amount" required class="form-control">
+                                <input type="text" inputmode="decimal" name="closing_cash_amount" required class="form-control money-display-input">
                             </div>
                             @if(\Auth::user()->role_id > 2)
                                 <input type="hidden" name="deposit_amount">
                             @else
                             <div class="form-group">
                                 <label>Setor Kasir</label>
-                                <input type="number" step="any" name="deposit_amount" class="form-control">
+                                <input type="text" inputmode="decimal" name="deposit_amount" class="form-control money-display-input">
                             </div>
                             @endif
                             <div class="form-group">
@@ -155,11 +155,11 @@
                     <input type="hidden" name="cash_register_id">
                     <div class="form-group">
                         <label>Uang Fisik Dihitung *</label>
-                        <input type="number" step="any" name="closing_cash_amount" required class="form-control">
+                        <input type="text" inputmode="decimal" name="closing_cash_amount" required class="form-control money-display-input">
                     </div>
                     <div class="form-group">
                         <label>Setor Kasir</label>
-                        <input type="number" step="any" name="deposit_amount" class="form-control">
+                        <input type="text" inputmode="decimal" name="deposit_amount" class="form-control money-display-input">
                     </div>
                     <div class="form-group">
                         <label>Catatan Tutup Kasir</label>
@@ -241,8 +241,8 @@
 
     $(".edit-deposit-btn").on("click", function () {
         $('#edit-deposit-modal input[name=cash_register_id]').val($(this).data('id'));
-        $('#edit-deposit-modal input[name=closing_cash_amount]').val($(this).data('closing_cash_amount'));
-        $('#edit-deposit-modal input[name=deposit_amount]').val($(this).data('deposit_amount'));
+        $('#edit-deposit-modal input[name=closing_cash_amount]').val(formatLocalizedNumber($(this).data('closing_cash_amount')));
+        $('#edit-deposit-modal input[name=deposit_amount]').val(formatLocalizedNumber($(this).data('deposit_amount')));
         $('#edit-deposit-modal textarea[name=closing_note]').val($(this).data('closing_note'));
     });
 

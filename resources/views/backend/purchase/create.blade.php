@@ -1,4 +1,38 @@
 @extends('backend.layout.main') @section('content')
+<style>
+    #myTable.order-list {
+        min-width: 1180px;
+    }
+    #myTable.order-list th:nth-child(1),
+    #myTable.order-list td:nth-child(1) {
+        min-width: 145px;
+    }
+    #myTable.order-list th:nth-child(3),
+    #myTable.order-list td:nth-child(3) {
+        min-width: 95px;
+    }
+    #myTable.order-list th:nth-child(4),
+    #myTable.order-list td:nth-child(4) {
+        min-width: 90px;
+    }
+    #myTable.order-list th:nth-child(8),
+    #myTable.order-list td:nth-child(8),
+    #myTable.order-list th:nth-child(9),
+    #myTable.order-list td:nth-child(9),
+    #myTable.order-list th:nth-child(11),
+    #myTable.order-list td:nth-child(11) {
+        min-width: 140px;
+    }
+    #myTable.order-list .net_unit_cost,
+    #myTable.order-list .inline-discount {
+        min-width: 125px;
+        text-align: right;
+    }
+    #myTable.order-list .sub-total {
+        white-space: nowrap;
+        text-align: right;
+    }
+</style>
 @if(session()->has('not_permitted'))
   <div class="alert alert-danger alert-dismissible text-center"><button type="button" class="close" data-dismiss="alert" aria-label="Close"><span aria-hidden="true">&times;</span></button>{{ session()->get('not_permitted') }}</div>
 @endif
@@ -129,8 +163,7 @@
                                         <label>{{trans('file.Select Product')}}</label>
                                         <div class="search-box input-group position-relative">
                                             <button class="btn btn-secondary"><i class="fa fa-barcode"></i></button>
-                                            <input type="text" name="product_code_name" id="lims_productcodeSearch" list="purchase-product-datalist" placeholder="Please type product code and select..." class="form-control" />
-                                            <datalist id="purchase-product-datalist"></datalist>
+                                            <input type="text" name="product_code_name" id="lims_productcodeSearch" placeholder="Scan barcode / ketik kode atau nama produk..." class="form-control" autocomplete="off" />
                                             <div id="purchase-product-suggestions" class="list-group position-absolute w-100" style="top:100%; left:0; z-index:99999; display:none;"></div>
                                         </div>
                                     </div>
@@ -227,7 +260,7 @@
                                             <label>
                                                 <strong>{{trans('file.Discount')}}</strong>
                                             </label>
-                                            <input type="number" name="order_discount" class="form-control" step="any" />
+                                            <input type="text" name="order_discount" class="form-control money-display-input" inputmode="decimal" />
                                         </div>
                                     </div>
                                     <div class="col-md-4">
@@ -235,7 +268,7 @@
                                             <label>
                                                 <strong>{{trans('file.Shipping Cost')}}</strong>
                                             </label>
-                                            <input type="number" name="shipping_cost" class="form-control" step="any" />
+                                            <input type="text" name="shipping_cost" class="form-control money-display-input" inputmode="decimal" />
                                         </div>
                                     </div>
                                 </div>
@@ -368,6 +401,11 @@
     var exchangeRate = 1;
     var currencyChange = false;
     var purchaseDraftKey = 'dekatpos:draft:' + location.pathname;
+    var serverDraftScope = 'purchase-create';
+    var serverDraftUrl = "{{ route('app-drafts.show') }}";
+    var serverDraftStoreUrl = "{{ route('app-drafts.store') }}";
+    var serverDraftDeleteUrl = "{{ route('app-drafts.destroy') }}";
+    var serverDraftTimer = null;
 
     $('#currency-id').val(currency['id']);
     $('.selectpicker').selectpicker({
@@ -429,8 +467,8 @@
     var lims_productcodeSearch = $('#lims_productcodeSearch');
     var purchaseSuggestionUrl = "{{url('purchases/product_suggestions')}}";
     var $purchaseSuggestions = $('#purchase-product-suggestions');
-    var $purchaseDataList = $('#purchase-product-datalist');
     var currentPurchaseSuggestions = [];
+    var currentPurchaseSuggestionTerm = '';
 
     function localPurchaseSuggestions(term) {
         var matcher = new RegExp($.ui.autocomplete.escapeRegex(term), "i");
@@ -441,10 +479,6 @@
 
     function renderPurchaseSuggestions(items) {
         currentPurchaseSuggestions = items || [];
-        $purchaseDataList.empty();
-        $.each(currentPurchaseSuggestions, function(i, item) {
-            $purchaseDataList.append('<option value="' + $('<div/>').text(item).html() + '">' + item.replace('|', ' - ') + '</option>');
-        });
         if (!items || !items.length) {
             $purchaseSuggestions.hide().empty();
             return;
@@ -458,13 +492,19 @@
 
     lims_productcodeSearch.on('input', function() {
         var term = $(this).val();
+        currentPurchaseSuggestions = [];
+        currentPurchaseSuggestionTerm = term;
         if (term.length < 1) {
             $purchaseSuggestions.hide().empty();
             return;
         }
         $.get(purchaseSuggestionUrl, { term: term }, function(items) {
+            if (lims_productcodeSearch.val() !== term) return;
+            currentPurchaseSuggestionTerm = term;
             renderPurchaseSuggestions(items && items.length ? items : localPurchaseSuggestions(term));
         }).fail(function() {
+            if (lims_productcodeSearch.val() !== term) return;
+            currentPurchaseSuggestionTerm = term;
             renderPurchaseSuggestions(localPurchaseSuggestions(term));
         });
     });
@@ -479,13 +519,25 @@
     });
 
     lims_productcodeSearch.on('keydown', function(e) {
-        if (e.key === 'Enter' && currentPurchaseSuggestions.length) {
-            e.preventDefault();
-            var selected = currentPurchaseSuggestions[0];
-            $(this).val('');
-            $purchaseSuggestions.hide().empty();
-            productSearch(selected);
-        }
+        if (e.key !== 'Enter') return;
+        e.preventDefault();
+        e.stopPropagation();
+        var term = $(this).val().trim();
+        if (!term) return;
+        var usableSuggestions = currentPurchaseSuggestionTerm === term ? currentPurchaseSuggestions : [];
+        var selected = usableSuggestions[0] || term;
+        $.each(usableSuggestions, function(i, item) {
+            var code = String(item).split('|')[0];
+            if (code === term || code.toLowerCase() === term.toLowerCase()) {
+                selected = item;
+                return false;
+            }
+        });
+        $(this).val('');
+        $purchaseSuggestions.hide().empty();
+        currentPurchaseSuggestions = [];
+        currentPurchaseSuggestionTerm = '';
+        productSearch(selected);
     });
 
     $purchaseSuggestions.on('mousedown', '.purchase-suggestion-item', function(e) {
@@ -493,6 +545,8 @@
         var data = $(this).data('value');
         lims_productcodeSearch.val('');
         $purchaseSuggestions.hide().empty();
+        currentPurchaseSuggestions = [];
+        currentPurchaseSuggestionTerm = '';
         productSearch(data);
     });
 
@@ -501,27 +555,6 @@
             $purchaseSuggestions.hide();
         }
     });
-
-    lims_productcodeSearch.autocomplete({
-    source: function(request, response) {
-        $.get(purchaseSuggestionUrl, { term: request.term }, function(items) {
-            response(items && items.length ? items : localPurchaseSuggestions(request.term));
-        }).fail(function() {
-            response(localPurchaseSuggestions(request.term));
-        });
-    },
-    response: function(event, ui) {
-        if (ui.content.length == 1) {
-            var data = ui.content[0].value;
-            $(this).autocomplete( "close" );
-            productSearch(data);
-        };
-    },
-    select: function(event, ui) {
-        var data = ui.item.value;
-        productSearch(data);
-    }
- });
 
     $('body').on('focus',".expired-date", function() {
         $(this).datepicker({
@@ -679,6 +712,7 @@
                             $('table.order-list tbody tr:nth-child(' + (rowindex + 1) + ') .recieved').val(qty);
                         }
                         calculateRowProductData(qty);
+                        $('table.order-list tbody tr:nth-child(' + (rowindex + 1) + ') .qty').focus().select();
                         flag = 0;
                     }
                 });
@@ -718,8 +752,8 @@
                         cols += '<td><input type="text" class="form-control expired-date" name="expired_date[]" disabled/></td>';
                     }
 
-                    cols += '<td><input type="number" step="any" class="form-control net_unit_cost" name="net_unit_cost[]" /></td>';
-                    cols += '<td><input type="number" step="any" class="form-control inline-discount" value="{{number_format(0, $general_setting->decimal, '.', '')}}" /></td>';
+                    cols += '<td><input type="text" inputmode="decimal" class="form-control net_unit_cost money-display-input" name="net_unit_cost[]" /></td>';
+                    cols += '<td><input type="text" inputmode="decimal" class="form-control inline-discount money-display-input" value="{{number_format(0, $general_setting->decimal, '.', '')}}" /></td>';
                     cols += '<td><select class="form-control inline-tax-select">' + taxOptions + '</select><div class="tax small text-right mt-1"></div></td>';
                     cols += '<td class="sub-total"></td>';
                     cols += '<td><button type="button" class="ibtnDel btn btn-md btn-danger">{{trans("file.delete")}}</button></td>';
@@ -748,7 +782,7 @@
                     is_imei.splice(rowindex, 0, data[11]);
                     checkQuantity(1, true);
                     savePurchaseDraft();
-                    newRow.find('.inline-purchase-unit').focus();
+                    newRow.find('.qty').focus().select();
                     if(data[11]) {
                         $('table.order-list tbody tr:nth-child(' + (rowindex + 1) + ')').find('.edit-product').click();
                     }
@@ -773,7 +807,7 @@
     $(document).on('change input', 'table.order-list .net_unit_cost', function() {
         rowindex = $(this).closest('tr').index();
         var $row = $(this).closest('tr');
-        var netUnitCost = parseFloat($(this).val()) || 0;
+        var netUnitCost = parseLocalizedNumber($(this).val());
         setBaseCostFromNetUnitCost(rowindex, netUnitCost);
         var oldCost = parseFloat($row.find('.original-cost').val()) || 0;
         var productId = $row.find('.product-id').val();
@@ -796,7 +830,7 @@
 
     $(document).on('input change', 'table.order-list .inline-discount', function() {
         rowindex = $(this).closest('tr').index();
-        product_discount[rowindex] = parseFloat($(this).val()) || 0;
+        product_discount[rowindex] = parseLocalizedNumber($(this).val());
         calculateRowProductData($(this).closest('tr').find('.qty').val());
         savePurchaseDraft();
     });
@@ -812,11 +846,15 @@
         lims_productcodeSearch.focus().select();
     });
 
-    $(document).on('keydown', 'table.order-list .inline-purchase-unit, table.order-list .net_unit_cost, table.order-list .inline-discount, table.order-list .inline-tax-select', function(e) {
+    $(document).on('keydown', 'table.order-list .qty, table.order-list .inline-purchase-unit, table.order-list .net_unit_cost, table.order-list .inline-discount, table.order-list .inline-tax-select', function(e) {
         if (e.key !== 'Enter') return;
         e.preventDefault();
+        e.stopPropagation();
         var $row = $(this).closest('tr');
-        if ($(this).hasClass('inline-purchase-unit')) {
+        if ($(this).hasClass('qty')) {
+            $row.find('.inline-purchase-unit').focus();
+        }
+        else if ($(this).hasClass('inline-purchase-unit')) {
             $row.find('.net_unit_cost').focus().select();
         }
         else if ($(this).hasClass('net_unit_cost')) {
@@ -855,6 +893,7 @@
         //product_cost[rowindex] = $('table.order-list tbody tr:nth-child(' + (rowindex + 1) + ')').find('.original-cost').val() * exchangeRate;
         unitConversion();
         var $row = $('table.order-list tbody tr:nth-child(' + (rowindex + 1) + ')');
+        var $netUnitCostInput = $row.find('.net_unit_cost');
         $row.find('.discount-value').val((product_discount[rowindex] * quantity).toFixed({{$general_setting->decimal}}));
         $row.find('.tax-rate').val(tax_rate[rowindex].toFixed({{$general_setting->decimal}}));
 
@@ -863,10 +902,11 @@
             var tax = net_unit_cost * quantity * (tax_rate[rowindex] / 100);
             var sub_total = (net_unit_cost * quantity) + tax;
 
-            $row.find('.net_unit_cost').val(net_unit_cost.toFixed({{$general_setting->decimal}}));
-            $row.find('.tax').text(tax.toFixed({{$general_setting->decimal}}));
+            if (!$netUnitCostInput.is(':focus'))
+                $netUnitCostInput.val(formatLocalizedNumber(net_unit_cost, {{$general_setting->decimal}}));
+            $row.find('.tax').text(formatLocalizedNumber(tax, {{$general_setting->decimal}}));
             $row.find('.tax-value').val(tax.toFixed({{$general_setting->decimal}}));
-            $row.find('.sub-total').text(sub_total.toFixed({{$general_setting->decimal}}));
+            $row.find('.sub-total').text(formatLocalizedNumber(sub_total, {{$general_setting->decimal}}));
             $row.find('.subtotal-value').val(sub_total.toFixed({{$general_setting->decimal}}));
         } else {
             var sub_total_unit = row_product_cost - product_discount[rowindex];
@@ -874,10 +914,11 @@
             var tax = (sub_total_unit - net_unit_cost) * quantity;
             var sub_total = sub_total_unit * quantity;
 
-            $row.find('.net_unit_cost').val(net_unit_cost.toFixed({{$general_setting->decimal}}));
-            $row.find('.tax').text(tax.toFixed({{$general_setting->decimal}}));
+            if (!$netUnitCostInput.is(':focus'))
+                $netUnitCostInput.val(formatLocalizedNumber(net_unit_cost, {{$general_setting->decimal}}));
+            $row.find('.tax').text(formatLocalizedNumber(tax, {{$general_setting->decimal}}));
             $row.find('.tax-value').val(tax.toFixed({{$general_setting->decimal}}));
-            $row.find('.sub-total').text(sub_total.toFixed({{$general_setting->decimal}}));
+            $row.find('.sub-total').text(formatLocalizedNumber(sub_total, {{$general_setting->decimal}}));
             $row.find('.subtotal-value').val(sub_total.toFixed({{$general_setting->decimal}}));
         }
 
@@ -922,7 +963,7 @@
         $(".discount-value").each(function() {
             total_discount += parseLocalizedNumber($(this).val());
         });
-        $("#total-discount").text(total_discount.toFixed({{$general_setting->decimal}}));
+        $("#total-discount").text(formatLocalizedNumber(total_discount, {{$general_setting->decimal}}));
         $('input[name="total_discount"]').val(total_discount.toFixed({{$general_setting->decimal}}));
 
         //Sum of tax
@@ -930,7 +971,7 @@
         $(".tax").each(function() {
             total_tax += parseLocalizedNumber($(this).text());
         });
-        $("#total-tax").text(total_tax.toFixed({{$general_setting->decimal}}));
+        $("#total-tax").text(formatLocalizedNumber(total_tax, {{$general_setting->decimal}}));
         $('input[name="total_tax"]').val(total_tax.toFixed({{$general_setting->decimal}}));
 
         //Sum of subtotal
@@ -938,7 +979,7 @@
         $(".sub-total").each(function() {
             total += parseLocalizedNumber($(this).text());
         });
-        $("#total").text(total.toFixed({{$general_setting->decimal}}));
+        $("#total").text(formatLocalizedNumber(total, {{$general_setting->decimal}}));
         $('input[name="total_cost"]').val(total.toFixed({{$general_setting->decimal}}));
 
         calculateGrandTotal();
@@ -952,18 +993,18 @@
         var order_tax = parseFloat($('select[name="order_tax_rate"]').val());
         if($('input[name="order_discount"]').val()) {
             if(!currencyChange)
-                var order_discount = parseFloat($('input[name="order_discount"]').val());
+                var order_discount = parseLocalizedNumber($('input[name="order_discount"]').val());
             else
-                var order_discount = parseFloat($('input[name="order_discount"]').val()) * exchangeRate;
+                var order_discount = parseLocalizedNumber($('input[name="order_discount"]').val()) * exchangeRate;
         }
         else
             var order_discount = {{number_format(0, $general_setting->decimal, '.', '')}};
 
         if($('input[name="shipping_cost"]').val()) {
             if(!currencyChange)
-                var shipping_cost = parseFloat($('input[name="shipping_cost"]').val());
+                var shipping_cost = parseLocalizedNumber($('input[name="shipping_cost"]').val());
             else
-                var shipping_cost = parseFloat($('input[name="shipping_cost"]').val()) * exchangeRate;
+                var shipping_cost = parseLocalizedNumber($('input[name="shipping_cost"]').val()) * exchangeRate;
         }
         else
             var shipping_cost = {{number_format(0, $general_setting->decimal, '.', '')}};
@@ -974,14 +1015,14 @@
 
         $('#item').text(item);
         $('input[name="item"]').val($('table.order-list tbody tr:last').index() + 1);
-        $('#subtotal').text(subtotal.toFixed({{$general_setting->decimal}}));
-        $('#order_tax').text(order_tax.toFixed({{$general_setting->decimal}}));
+        $('#subtotal').text(formatLocalizedNumber(subtotal, {{$general_setting->decimal}}));
+        $('#order_tax').text(formatLocalizedNumber(order_tax, {{$general_setting->decimal}}));
         $('input[name="order_tax"]').val(order_tax.toFixed({{$general_setting->decimal}}));
-        $('#order_discount').text(order_discount.toFixed({{$general_setting->decimal}}));
+        $('#order_discount').text(formatLocalizedNumber(order_discount, {{$general_setting->decimal}}));
         $('input[name="order_discount"]').val(order_discount);
-        $('#shipping_cost').text(shipping_cost.toFixed({{$general_setting->decimal}}));
+        $('#shipping_cost').text(formatLocalizedNumber(shipping_cost, {{$general_setting->decimal}}));
         $('input[name="shipping_cost"]').val(shipping_cost);
-        $('#grand_total').text(grand_total.toFixed({{$general_setting->decimal}}));
+        $('#grand_total').text(formatLocalizedNumber(grand_total, {{$general_setting->decimal}}));
         $('input[name="grand_total"]').val(grand_total.toFixed({{$general_setting->decimal}}));
         currencyChange = false;
     }
@@ -999,6 +1040,7 @@
     });
 
     $(window).keydown(function(e){
+        if (e.isDefaultPrevented && e.isDefaultPrevented()) return;
         if (e.which == 13) {
             var $targ = $(e.target);
             if (!$targ.is("textarea") && !$targ.is(":button,:submit")) {
@@ -1031,10 +1073,16 @@
         }
     });
 
+    function purchaseDraftFields() {
+        return $('#purchase-form').serializeArray().filter(function(field) {
+            return field.name !== '_token' && field.name !== '_method';
+        });
+    }
+
     function savePurchaseDraft() {
         try {
-            localStorage.setItem(purchaseDraftKey, JSON.stringify({
-                fields: $('#purchase-form').serializeArray(),
+            var draft = {
+                fields: purchaseDraftFields(),
                 tbody: $('table.order-list tbody').html(),
                 product_cost: product_cost,
                 product_discount: product_discount,
@@ -1045,29 +1093,40 @@
                 unit_operator: unit_operator,
                 unit_operation_value: unit_operation_value,
                 is_imei: is_imei
-            }));
+            };
+            localStorage.setItem(purchaseDraftKey, JSON.stringify(draft));
+            clearTimeout(serverDraftTimer);
+            serverDraftTimer = setTimeout(function() {
+                $.post(serverDraftStoreUrl, {
+                    scope: serverDraftScope,
+                    draft: draft
+                });
+            }, 700);
         } catch (e) {}
     }
 
-    function restorePurchaseDraft() {
+    function applyPurchaseDraft(draft) {
         try {
-            var raw = localStorage.getItem(purchaseDraftKey);
-            if (!raw) return;
-            var draft = JSON.parse(raw);
+            if (!draft) return;
+            if (draft.tbody) $('table.order-list tbody').html(draft.tbody);
             if (draft.fields) {
+                var fieldIndexes = {};
                 $.each(draft.fields, function(i, field) {
-                    var $field = $('#purchase-form [name="' + field.name.replace(/"/g, '\\"') + '"]');
-                    if (!$field.length || $field.attr('type') === 'file') return;
-                    if ($field.is(':checkbox,:radio')) {
-                        $field.filter('[value="' + field.value.replace(/"/g, '\\"') + '"]').prop('checked', true);
+                    if (field.name === '_token' || field.name === '_method') return;
+                    var $fields = $('#purchase-form [name="' + field.name.replace(/"/g, '\\"') + '"]');
+                    if (!$fields.length || $fields.first().attr('type') === 'file') return;
+                    if ($fields.first().is(':checkbox,:radio')) {
+                        $fields.filter('[value="' + String(field.value).replace(/"/g, '\\"') + '"]').prop('checked', true);
                     }
                     else {
+                        var fieldIndex = fieldIndexes[field.name] || 0;
+                        var $field = $fields.length > 1 ? $fields.eq(fieldIndex) : $fields;
                         $field.val(field.value);
+                        fieldIndexes[field.name] = fieldIndex + 1;
                     }
                 });
                 $('.selectpicker').selectpicker('refresh');
             }
-            if (draft.tbody) $('table.order-list tbody').html(draft.tbody);
             product_cost = draft.product_cost || [];
             product_discount = draft.product_discount || [];
             tax_rate = draft.tax_rate || [];
@@ -1081,11 +1140,39 @@
         } catch (e) {}
     }
 
+    function restorePurchaseDraft() {
+        $.get(serverDraftUrl, { scope: serverDraftScope }, function(resp) {
+            if (resp && resp.draft) {
+                applyPurchaseDraft(resp.draft);
+                return;
+            }
+            try {
+                var raw = localStorage.getItem(purchaseDraftKey);
+                if (raw) applyPurchaseDraft(JSON.parse(raw));
+            } catch (e) {}
+        }).fail(function() {
+            try {
+                var raw = localStorage.getItem(purchaseDraftKey);
+                if (raw) applyPurchaseDraft(JSON.parse(raw));
+            } catch (e) {}
+        });
+    }
+
+    function clearPurchaseDraft() {
+        localStorage.removeItem(purchaseDraftKey);
+        $.ajax({
+            url: serverDraftDeleteUrl,
+            type: 'DELETE',
+            data: { scope: serverDraftScope }
+        });
+    }
+
     setTimeout(restorePurchaseDraft, 350);
     $('#purchase-form').on('input change', 'input, select, textarea', savePurchaseDraft);
     $('table.order-list tbody').on('input change', 'input, select', savePurchaseDraft);
 
     $('#purchase-form').on('submit',function(e){
+    $('#purchase-form input[name="_token"]').val($('meta[name="csrf-token"]').attr('content'));
     var rownumber = $('table.order-list tbody tr:last').index();
     if (rownumber < 0) {
         alert("Please insert product to order table!")
@@ -1111,13 +1198,13 @@
         }
         else {
             $(".batch-no, .expired-date").prop('disabled', false);
-            localStorage.removeItem(purchaseDraftKey);
+            clearPurchaseDraft();
         }
     }
     else {
         $(".batch-no, .expired-date").prop('disabled', false);
         $("#submit-btn").prop('disabled', true);
-        localStorage.removeItem(purchaseDraftKey);
+        clearPurchaseDraft();
     }
  });
 </script>

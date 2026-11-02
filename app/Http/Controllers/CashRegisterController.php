@@ -71,10 +71,10 @@ class CashRegisterController extends Controller
         $lines = [];
         if($actualCashSales > 0) {
             $lines[] = [
-                'chart_of_account_id' => JournalService::salesCashAccountIdForWarehouse($warehouseId),
+                'chart_of_account_id' => JournalService::cashierCashAccountId($cash_register_data->user_id),
                 'debit' => $actualCashSales,
                 'credit' => 0,
-                'note' => 'Uang fisik penjualan register #' . $cash_register_data->id,
+                'note' => 'Uang fisik penjualan kasir ' . ($cash_register_data->user->name ?? ('#' . $cash_register_data->user_id)) . ' register #' . $cash_register_data->id,
             ];
         }
         if($creditSales > 0) {
@@ -225,11 +225,16 @@ class CashRegisterController extends Controller
             return redirect()->back()->with('not_permitted', 'Sorry! You are not allowed to access this module');
 
         if (Auth::user()->role_id <= 2) {
-            $lims_cash_register_all = CashRegister::with('user', 'warehouse', 'approver')->get();
+            $lims_cash_register_all = CashRegister::with('user', 'warehouse', 'approver')
+                ->orderBy('created_at', 'desc')
+                ->orderBy('id', 'desc')
+                ->get();
             return view('backend.cash_register.index', compact('lims_cash_register_all'));
         } else {
             $lims_cash_register_all = CashRegister::with('user', 'warehouse', 'approver')
                 ->where('user_id', Auth::id())
+                ->orderBy('created_at', 'desc')
+                ->orderBy('id', 'desc')
                 ->get();
             return view('backend.cash_register.index', compact('lims_cash_register_all'));
         }
@@ -425,6 +430,33 @@ class CashRegisterController extends Controller
     private function availabilityStatus($warehouse_id)
     {
         $today = date('Y-m-d');
+
+        $pending_deposit = CashRegister::with('warehouse')
+            ->where([
+                ['user_id', Auth::id()],
+                ['status', false]
+            ])
+            // Setoran kemarin boleh tetap menunggu approval. Yang dicegah
+            // hanya membuka register kedua pada hari kerja yang sama.
+            ->whereDate('created_at', $today)
+            ->where(function ($query) {
+                $query->whereNull('approval_status')
+                    ->orWhere('approval_status', '')
+                    ->orWhereRaw('LOWER(approval_status) != ?', ['approved']);
+            })
+            ->latest('id')
+            ->first();
+
+        if ($pending_deposit) {
+            return [
+                'status' => 'need_deposit',
+                'message' => 'Kasir hari ini di ' . ($pending_deposit->warehouse->name ?? 'gudang lain') . ' sudah ditutup dan setoran masih menunggu approval. Kasir baru bisa dibuka lagi pada hari berikutnya.',
+                'cash_register_id' => $pending_deposit->id,
+                'warehouse_id' => $pending_deposit->warehouse_id,
+                'warehouse_name' => $pending_deposit->warehouse->name ?? null,
+            ];
+        }
+
         $open_register = CashRegister::where([
                 ['user_id', Auth::id()],
                 ['warehouse_id', $warehouse_id],
@@ -459,46 +491,25 @@ class CashRegisterController extends Controller
                 ['user_id', Auth::id()],
                 ['status', true],
             ])
-            ->whereDate('created_at', $today)
             ->latest('id')
             ->first();
 
         if ($open_elsewhere) {
+            $register_date = date('Y-m-d', strtotime($open_elsewhere->created_at));
             return [
-                'status' => 'open_other_warehouse',
-                'message' => 'Kasir Anda masih terbuka di ' . ($open_elsewhere->warehouse->name ?? 'gudang lain') . '. Tutup kasir itu dulu sebelum membuka kasir di gudang lain.',
+                'status' => $register_date < $today ? 'need_deposit' : 'open_other_warehouse',
+                'message' => $register_date < $today
+                    ? 'Kasir sebelumnya di ' . ($open_elsewhere->warehouse->name ?? 'gudang lain') . ' belum ditutup dan sudah melewati hari. Tutup kasir dan selesaikan setoran terlebih dahulu sebelum input modal kasir hari ini.'
+                    : 'Kasir Anda masih terbuka di ' . ($open_elsewhere->warehouse->name ?? 'gudang lain') . '. Tutup kasir itu dulu sebelum membuka kasir di gudang lain.',
                 'cash_register_id' => $open_elsewhere->id,
                 'warehouse_id' => $open_elsewhere->warehouse_id,
                 'warehouse_name' => $open_elsewhere->warehouse->name ?? null,
             ];
         }
 
-        $pending_deposit = CashRegister::where([
+        $closed_today = CashRegister::with('warehouse')
+            ->where([
                 ['user_id', Auth::id()],
-                ['warehouse_id', $warehouse_id],
-                ['status', false]
-            ])
-            ->where(function ($query) {
-                $query->whereNull('approval_status')
-                    ->orWhere('approval_status', '!=', 'approved');
-            })
-            ->latest('id')
-            ->first();
-
-        if ($pending_deposit) {
-            $register_date = date('Y-m-d', strtotime($pending_deposit->created_at));
-            return [
-                'status' => 'need_deposit',
-                'message' => $register_date < $today
-                    ? 'Setoran kasir sebelumnya belum selesai dan sudah melewati hari. Selesaikan setoran terlebih dahulu sebelum input modal kasir hari ini.'
-                    : 'Kasir hari ini sudah ditutup dan setoran masih menunggu approval. Tidak bisa buka kasir lagi sebelum setoran selesai.',
-                'cash_register_id' => $pending_deposit->id,
-            ];
-        }
-
-        $closed_today = CashRegister::where([
-                ['user_id', Auth::id()],
-                ['warehouse_id', $warehouse_id],
                 ['status', false]
             ])
             ->whereDate('created_at', $today)
@@ -508,8 +519,10 @@ class CashRegisterController extends Controller
         if ($closed_today) {
             return [
                 'status' => 'closed_today',
-                'message' => 'Kasir hari ini sudah tutup dan sudah setoran. Kasir yang sudah tutup dan setoran di hari yang sama tidak bisa dibuka lagi.',
+                'message' => 'Kasir hari ini di ' . ($closed_today->warehouse->name ?? 'gudang lain') . ' sudah tutup dan sudah setoran. Kasir yang sudah tutup dan setoran di hari yang sama tidak bisa dibuka lagi.',
                 'cash_register_id' => $closed_today->id,
+                'warehouse_id' => $closed_today->warehouse_id,
+                'warehouse_name' => $closed_today->warehouse->name ?? null,
             ];
         }
 

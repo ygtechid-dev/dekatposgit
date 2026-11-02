@@ -8,9 +8,10 @@
     <meta name="description" content="">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="robots" content="all,follow">
-    <link rel="icon" type="image/png" href="{{url('public/logo', $general_setting->site_logo)}}" />
+    @php($app_favicon = !empty($general_setting->favicon) ? $general_setting->favicon : $general_setting->site_logo)
+    <link rel="icon" type="image/png" href="{{url('public/logo/'.$app_favicon)}}" />
     @if(!config('database.connections.saleprosaas_landlord'))
-    <link rel="icon" type="image/png" href="{{url('logo', $general_setting->site_logo)}}" />
+    <link rel="icon" type="image/png" href="{{url('logo/'.$app_favicon)}}" />
     <!-- Bootstrap CSS-->
     <link rel="stylesheet" href="<?php echo asset('vendor/bootstrap/css/bootstrap.min.css') ?>" type="text/css">
     <!-- login stylesheet-->
@@ -20,7 +21,7 @@
     <noscript><link href="https://fonts.googleapis.com/css?family=Nunito:400,500,700" rel="stylesheet"></noscript>
     <script type="text/javascript" src="<?php echo asset('vendor/jquery/jquery.min.js') ?>"></script>
     @else
-    <link rel="icon" type="image/png" href="{{url('../../logo', $general_setting->site_logo)}}" />
+    <link rel="icon" type="image/png" href="{{url('../../logo/'.$app_favicon)}}" />
     <!-- Bootstrap CSS-->
     <link rel="stylesheet" href="<?php echo asset('../../vendor/bootstrap/css/bootstrap.min.css') ?>" type="text/css">
     <!-- login stylesheet-->

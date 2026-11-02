@@ -45,7 +45,6 @@
     41 => 'App\\Providers\\AuthServiceProvider',
     42 => 'App\\Providers\\EventServiceProvider',
     43 => 'App\\Providers\\RouteServiceProvider',
-    44 => 'Barryvdh\\Debugbar\\ServiceProvider',
   ),
   'eager' => 
   array (
@@ -78,7 +77,6 @@
     26 => 'App\\Providers\\AuthServiceProvider',
     27 => 'App\\Providers\\EventServiceProvider',
     28 => 'App\\Providers\\RouteServiceProvider',
-    29 => 'Barryvdh\\Debugbar\\ServiceProvider',
   ),
   'deferred' => 
   array (

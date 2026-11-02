@@ -39,10 +39,10 @@
                         @foreach($lims_journal_data->details as $detail)
                         <tr class="journal-line">
                             <td>
-                                <select name="chart_of_account_id[]" class="selectpicker form-control" data-live-search="true" data-live-search-style="begins" title="- Pilih Akun -" required>
+                                <select name="chart_of_account_id[]" class="selectpicker form-control" data-live-search="true" data-live-search-style="contains" data-size="10" title="- Pilih Akun -" required>
                                     <option value="">- Pilih Akun -</option>
                                     @foreach($lims_coa_all as $coa)
-                                    <option value="{{ $coa->id }}" @if($coa->id == $detail->chart_of_account_id) selected @endif>{{ $coa->code }} - {{ $coa->name }}</option>
+                                    <option value="{{ $coa->id }}" data-tokens="{{ $coa->code }} {{ $coa->name }}" @if($coa->id == $detail->chart_of_account_id) selected @endif>{{ $coa->code }} - {{ $coa->name }}</option>
                                     @endforeach
                                 </select>
                             </td>
@@ -85,7 +85,10 @@
 
     var journalDecimal = {{ (int) $general_setting->decimal }};
 
-    $('.selectpicker').selectpicker();
+    $('.selectpicker').selectpicker({
+        liveSearch: true,
+        liveSearchStyle: 'contains'
+    });
 
     function formatMoney(num) {
         return (num || 0).toLocaleString('id-ID', { minimumFractionDigits: journalDecimal, maximumFractionDigits: journalDecimal });
@@ -106,7 +109,10 @@
     $('#add-line').on('click', function() {
         var $newRow = lineTemplate();
         $('#journal-lines-table tbody').append($newRow);
-        $newRow.find('.selectpicker').selectpicker();
+        $newRow.find('.selectpicker').selectpicker({
+            liveSearch: true,
+            liveSearchStyle: 'contains'
+        });
         recalcTotals();
     });
 

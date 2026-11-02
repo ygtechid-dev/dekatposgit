@@ -86,7 +86,15 @@
 
             <div class="form-group">
                 <label>Jumlah Bayar *</label>
-                <input type="number" name="amount" step="any" min="0.01" class="form-control" required>
+                <input type="text" name="amount" inputmode="decimal" class="form-control money-display-input" required>
+            </div>
+            <div class="form-group">
+                <label>Akun Penerimaan (COA) *</label>
+                <select name="account_id" class="form-control selectpicker" data-live-search="true" data-live-search-style="contains" data-size="10" title="Pilih akun penerimaan..." required>
+                    @foreach($lims_account_list as $account)
+                        <option value="{{$account->id}}" data-tokens="{{$account->coa_label_code}} {{$account->coa_label_name}}" @if($account->is_default) selected @endif>{{$account->coa_label}}</option>
+                    @endforeach
+                </select>
             </div>
             <div class="form-group">
                 <label>Catatan</label>
@@ -122,6 +130,7 @@
         $('#piutang-total-due').text(formatRupiahDisplay(due));
         $('input[name="amount"]').val('');
         $('textarea[name="note"]').val('');
+        $('#bayarPiutangModal select[name="account_id"]').selectpicker('refresh');
         $('#piutang-invoice-list').html('<tr><td colspan="5" class="text-center">Memuat data invoice...</td></tr>');
 
         $.get(dueInvoicesBaseUrl + '/' + id + '/invoices', function(data) {

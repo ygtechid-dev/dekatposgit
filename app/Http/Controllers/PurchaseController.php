@@ -208,6 +208,11 @@ class PurchaseController extends Controller
             else
                 $payment_status = 0;
 
+            if($request->input('supplier_id'))
+                $supplier_id = $request->input('supplier_id');
+            else
+                $supplier_id = 0;
+
             if($request->input('starting_date')) {
                 $starting_date = $request->input('starting_date');
                 $ending_date = $request->input('ending_date');
@@ -223,6 +228,7 @@ class PurchaseController extends Controller
                 $all_permission[] = 'dummy text';
             $lims_pos_setting_data = PosSetting::select('stripe_public_key')->latest()->first();
             $lims_warehouse_list = Warehouse::where('is_active', true)->get();
+            $lims_supplier_list = Supplier::where('is_active', true)->orderBy('name')->get();
             $lims_account_list = Account::with('chartOfAccount')->where('is_active', true)->get();
             $custom_fields = CustomField::where([
                                 ['belongs_to', 'purchase'],
@@ -232,7 +238,7 @@ class PurchaseController extends Controller
             foreach($custom_fields as $fieldName) {
                 $field_name[] = str_replace(" ", "_", strtolower($fieldName));
             }
-            return view('backend.purchase.index', compact( 'lims_account_list', 'lims_warehouse_list', 'all_permission', 'lims_pos_setting_data', 'warehouse_id', 'starting_date', 'ending_date', 'purchase_status', 'payment_status', 'custom_fields', 'field_name'));
+            return view('backend.purchase.index', compact( 'lims_account_list', 'lims_warehouse_list', 'lims_supplier_list', 'all_permission', 'lims_pos_setting_data', 'warehouse_id', 'supplier_id', 'starting_date', 'ending_date', 'purchase_status', 'payment_status', 'custom_fields', 'field_name'));
         }
         else
             return redirect()->back()->with('not_permitted', 'Sorry! You are not allowed to access this module');
@@ -254,6 +260,7 @@ class PurchaseController extends Controller
         );
 
         $warehouse_id = $request->input('warehouse_id');
+        $supplier_id = $request->input('supplier_id');
         $purchase_status = $request->input('purchase_status');
         $payment_status = $request->input('payment_status');
 
@@ -262,6 +269,8 @@ class PurchaseController extends Controller
         $this->staffAccessCheck($q);
         if($warehouse_id)
             $q = $q->where('warehouse_id', $warehouse_id);
+        if($supplier_id)
+            $q = $q->where('supplier_id', $supplier_id);
         if($purchase_status)
             $q = $q->where('status', $purchase_status);
         if($payment_status)
@@ -297,6 +306,8 @@ class PurchaseController extends Controller
             $this->staffAccessCheck($q);
             if($warehouse_id)
                 $q = $q->where('warehouse_id', $warehouse_id);
+            if($supplier_id)
+                $q = $q->where('supplier_id', $supplier_id);
             if($purchase_status)
                 $q = $q->where('status', $purchase_status);
             if($payment_status)
@@ -306,61 +317,40 @@ class PurchaseController extends Controller
         else
         {
             $search = $request->input('search.value');
-            $q = Purchase::leftJoin('suppliers', 'purchases.supplier_id', '=', 'suppliers.id')
-                ->whereDate('purchases.created_at', '=' , date('Y-m-d', strtotime(str_replace('/', '-', $search))))
+            $q = Purchase::with('supplier', 'warehouse')
+                ->leftJoin('suppliers', 'purchases.supplier_id', '=', 'suppliers.id')
+                ->whereDate('purchases.created_at', '>=', $request->input('starting_date'))
+                ->whereDate('purchases.created_at', '<=', $request->input('ending_date'));
+            $this->staffAccessCheck($q);
+            if($warehouse_id)
+                $q->where('purchases.warehouse_id', $warehouse_id);
+            if($supplier_id)
+                $q->where('purchases.supplier_id', $supplier_id);
+            if($purchase_status)
+                $q->where('purchases.status', $purchase_status);
+            if($payment_status)
+                $q->where('purchases.payment_status', $payment_status);
+
+            $q->where(function ($query) use ($search, $field_names) {
+                $search_date = date_create_from_format(config('date_format'), $search);
+                if($search_date)
+                    $query->whereDate('purchases.created_at', $search_date->format('Y-m-d'));
+                else
+                    $query->where('purchases.reference_no', 'LIKE', "%{$search}%");
+
+                $query->orWhere('purchases.reference_no', 'LIKE', "%{$search}%")
+                    ->orWhere('suppliers.name', 'LIKE', "%{$search}%");
+                foreach ($field_names as $key => $field_name) {
+                    $query->orWhere('purchases.' . $field_name, 'LIKE', "%{$search}%");
+                }
+            });
+
+            $totalFiltered = (clone $q)->count('purchases.id');
+            $purchases = $q->select('purchases.*')
                 ->offset($start)
                 ->limit($limit)
-                ->orderBy($order,$dir);
-            if(Auth::user()->role_id > 2 && config('staff_access') == 'own') {
-                $q =  $q->with('supplier', 'warehouse')
-                        ->where('purchases.user_id', Auth::id())
-                        ->orwhere([
-                            ['purchases.reference_no', 'LIKE', "%{$search}%"],
-                            ['purchases.user_id', Auth::id()]
-                        ])
-                        ->orwhere([
-                            ['suppliers.name', 'LIKE', "%{$search}%"],
-                            ['purchases.user_id', Auth::id()]
-                        ]);
-                foreach ($field_names as $key => $field_name) {
-                    $q = $q->orwhere([
-                            ['purchases.user_id', Auth::id()],
-                            ['purchases.' . $field_name, 'LIKE', "%{$search}%"]
-                        ]);
-                }      
-                $purchases = $q->select('purchases.*')->get();
-                $totalFiltered = $q->count();
-            }
-            elseif(Auth::user()->role_id > 2 && config('staff_access') == 'warehouse') {
-                $q =  $q->with('supplier', 'warehouse')
-                ->where('purchases.user_id', Auth::id())
-                ->orwhere([
-                    ['purchases.reference_no', 'LIKE', "%{$search}%"],
-                    ['purchases.warehouse_id', Auth::user()->warehouse_id]
-                ])
-                ->orwhere([
-                    ['suppliers.name', 'LIKE', "%{$search}%"],
-                    ['purchases.warehouse_id', Auth::user()->warehouse_id]
-                ]);
-                foreach ($field_names as $key => $field_name) {
-                    $q = $q->orwhere([
-                            ['purchases.user_id', Auth::id()],
-                            ['purchases.' . $field_name, 'LIKE', "%{$search}%"]
-                        ]);
-                }      
-                $purchases = $q->select('purchases.*')->get();
-                $totalFiltered = $q->count();
-            }
-            else {
-                $q = $q->with('supplier', 'warehouse')
-                    ->orwhere('purchases.reference_no', 'LIKE', "%{$search}%")
-                    ->orwhere('suppliers.name', 'LIKE', "%{$search}%");
-                foreach ($field_names as $key => $field_name) {
-                    $q = $q->orwhere('purchases.' . $field_name, 'LIKE', "%{$search}%");
-                }
-                $purchases = $q->select('purchases.*')->get();
-                $totalFiltered = $q->count();
-            }
+                ->orderBy('purchases.' . $order, $dir)
+                ->get();
         }
         $data = array();
         if(!empty($purchases))
@@ -1431,6 +1421,80 @@ class PurchaseController extends Controller
             PaymentWithCheque::create($data);
         }
         return redirect('purchases')->with('message', 'Payment created successfully');
+    }
+
+    public function addSelectedPayment(Request $request)
+    {
+        $role = Role::find(Auth::user()->role_id);
+        if (!$role || !$role->hasPermissionTo('purchase-payment-add')) {
+            return redirect()->back()->with('not_permitted', 'Anda tidak memiliki izin untuk menambah pembayaran pembelian.');
+        }
+
+        $data = $request->validate([
+            'purchase_ids' => 'required|string',
+            'account_id' => 'required|exists:accounts,id',
+            'payment_note' => 'nullable|string|max:1000',
+        ]);
+        $purchaseIds = array_values(array_unique(array_filter(array_map('intval', json_decode($data['purchase_ids'], true) ?: []))));
+        if (!$purchaseIds) {
+            return redirect()->back()->with('not_permitted', 'Pilih minimal satu pembelian yang akan dibayar.');
+        }
+
+        try {
+            $paidCount = DB::transaction(function () use ($purchaseIds, $data) {
+                $purchases = Purchase::whereIn('id', $purchaseIds)->lockForUpdate()->get();
+                if ($purchases->count() !== count($purchaseIds)) {
+                    throw new \RuntimeException('Sebagian data pembelian tidak ditemukan.');
+                }
+
+                $payments = [];
+                $totalDue = 0;
+                foreach ($purchases as $purchase) {
+                    if ((int) $purchase->status !== 1) {
+                        throw new \RuntimeException('Pembelian ' . $purchase->reference_no . ' belum berstatus Diterima.');
+                    }
+                    $returnedAmount = (float) DB::table('return_purchases')->where('purchase_id', $purchase->id)->sum('grand_total');
+                    $due = round((float) $purchase->grand_total - $returnedAmount - (float) $purchase->paid_amount, 2);
+                    if ($due <= 0) {
+                        throw new \RuntimeException('Pembelian ' . $purchase->reference_no . ' sudah lunas.');
+                    }
+                    $payments[] = [$purchase, $due];
+                    $totalDue += $due;
+                }
+
+                $cashBalance = JournalService::cashAccountBalance($data['account_id']);
+                if ($cashBalance + 0.00001 < $totalDue) {
+                    throw new \RuntimeException('Saldo akun pembayaran tidak mencukupi. Saldo tersedia: ' . number_format($cashBalance, config('decimal'), ',', '.'));
+                }
+
+                foreach ($payments as [$purchase, $amount]) {
+                    $purchase->paid_amount = (float) $purchase->paid_amount + $amount;
+                    $purchase->payment_status = 2;
+                    $purchase->save();
+
+                    $payment = new Payment();
+                    $payment->user_id = Auth::id();
+                    $payment->purchase_id = $purchase->id;
+                    $payment->account_id = $data['account_id'];
+                    $payment->payment_reference = 'ppr-' . now()->format('Ymd-His') . '-' . $purchase->id;
+                    $payment->amount = $amount;
+                    $payment->change = 0;
+                    $payment->paying_method = 'Cash';
+                    $payment->payment_note = $data['payment_note'] ?? null;
+                    $payment->save();
+
+                    $debitId = $this->purchasePayableAccountId($purchase->warehouse_id);
+                    $creditId = JournalService::coaIdForCashAccount($payment->account_id);
+                    JournalService::postSimple(now(), 'Pembayaran pembelian ' . $payment->payment_reference, $debitId, $creditId, $amount, 'purchase_payment', $payment->id);
+                }
+
+                return count($payments);
+            });
+        } catch (\Throwable $e) {
+            return redirect()->back()->with('not_permitted', $e->getMessage());
+        }
+
+        return redirect('purchases')->with('message', $paidCount . ' pembelian terpilih berhasil dibayar lunas.');
     }
 
     public function getPayment($id)

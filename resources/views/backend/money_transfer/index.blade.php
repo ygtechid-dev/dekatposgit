@@ -20,6 +20,8 @@
                     <th>{{trans('file.From Account')}}</th>
                     <th>{{trans('file.To Account')}}</th>
                     <th>{{trans('file.Amount')}}</th>
+                    <th>Keterangan</th>
+                    <th>Lampiran</th>
                     <th class="not-exported">{{trans('file.action')}}</th>
                 </tr>
             </thead>
@@ -32,6 +34,14 @@
                     <td>{{ $money_transfer->fromAccount->coa_label }}</td>
                     <td>{{ $money_transfer->toAccount->coa_label }}</td>
                     <td>{{ number_format((float)$money_transfer->amount, $general_setting->decimal, ',', '.')}}</td>
+                    <td>{{ $money_transfer->note ?: '-' }}</td>
+                    <td>
+                        @if($money_transfer->document)
+                            <a href="{{ asset('documents/money_transfer/' . $money_transfer->document) }}" target="_blank" class="btn btn-sm btn-info" title="Lihat lampiran"><i class="dripicons-document"></i></a>
+                        @else
+                            -
+                        @endif
+                    </td>
                     <td>
                         <div class="btn-group">
                             <button type="button" class="btn btn-default btn-sm dropdown-toggle" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">{{trans('file.action')}}
@@ -39,7 +49,7 @@
                                 <span class="sr-only">Toggle Dropdown</span>
                             </button>
                             <ul class="dropdown-menu edit-options dropdown-menu-right dropdown-default" user="menu">
-                                <li><button type="button" id="edit-btn" data-id="{{$money_transfer->id}}" data-from_id="{{$money_transfer->from_account_id}}" data-to_id="{{$money_transfer->to_account_id}}" data-amount="{{$money_transfer->amount}}"  class=" btn btn-link" data-toggle="modal" data-target="#edit-money-transfer-modal"><i class="dripicons-document-edit"></i> {{trans('file.edit')}}</button></li>
+                                <li><button type="button" data-id="{{$money_transfer->id}}" data-from_id="{{$money_transfer->from_account_id}}" data-to_id="{{$money_transfer->to_account_id}}" data-amount="{{$money_transfer->amount}}" class="btn btn-link edit-transfer-btn" data-toggle="modal" data-target="#edit-money-transfer-modal"><i class="dripicons-document-edit"></i> {{trans('file.edit')}}</button></li>
                                 <li class="divider"></li>
                                 {{ Form::open(['route' => ['money-transfers.destroy', $money_transfer->id], 'method' => 'DELETE'] ) }}
                                 <li>
@@ -60,6 +70,8 @@
                 <th></th>
                 <th></th>
                 <th></th>
+                <th></th>
+                <th></th>
             </tfoot>
         </table>
     </div>
@@ -75,7 +87,7 @@
             </div>
             <div class="modal-body">
               <p class="italic"><small>{{trans('file.The field labels marked with * are required input fields')}}.</small></p>
-                {!! Form::open(['route' => 'money-transfers.store', 'method' => 'post']) !!}
+                {!! Form::open(['route' => 'money-transfers.store', 'method' => 'post', 'files' => true]) !!}
                   <div class="row">
                       <div class="col-md-6 form-group">
                           <label> {{trans('file.From Account')}} *</label>
@@ -96,7 +108,16 @@
 
                       <div class="col-md-6 form-group">
                           <label>{{trans('file.Amount')}} *</label>
-                          <input type="number" name="amount" class="form-control" step="any" required>
+                          <input type="text" name="amount" class="form-control money-display-input" inputmode="decimal" required>
+                      </div>
+                      <div class="col-md-12 form-group">
+                          <label>Keterangan</label>
+                          <textarea name="note" class="form-control" rows="3" placeholder="Masukkan keterangan transfer"></textarea>
+                      </div>
+                      <div class="col-md-12 form-group">
+                          <label>Lampiran Dokumen</label>
+                          <input type="file" name="document" class="form-control" accept=".jpg,.jpeg,.png,.gif,.pdf,.csv,.doc,.docx,.xls,.xlsx,.txt">
+                          <small class="form-text text-muted">Maksimal 10 MB.</small>
                       </div>
                   </div>
                   <div class="form-group">
@@ -118,7 +139,7 @@
             </div>
             <div class="modal-body">
                 <p class="italic"><small>{{trans('file.The field labels marked with * are required input fields')}}.</small></p>
-                {!! Form::open(['route' => ['money-transfers.update', 1], 'method' => 'put']) !!}
+                {!! Form::open(['route' => ['money-transfers.update', 1], 'method' => 'put', 'files' => true]) !!}
                   <div class="row">
                         <input type="hidden" name="id">
                       <div class="col-md-6 form-group">
@@ -140,7 +161,16 @@
 
                       <div class="col-md-6 form-group">
                           <label>{{trans('file.Amount')}} *</label>
-                          <input type="number" name="amount" class="form-control" step="any" required>
+                          <input type="text" name="amount" class="form-control money-display-input" inputmode="decimal" required>
+                      </div>
+                      <div class="col-md-12 form-group">
+                          <label>Keterangan</label>
+                          <textarea name="note" class="form-control" rows="3" placeholder="Masukkan keterangan transfer"></textarea>
+                      </div>
+                      <div class="col-md-12 form-group">
+                          <label>Lampiran Dokumen</label>
+                          <input type="file" name="document" class="form-control" accept=".jpg,.jpeg,.png,.gif,.pdf,.csv,.doc,.docx,.xls,.xlsx,.txt">
+                          <small class="form-text text-muted">Kosongkan jika lampiran tidak diubah. Maksimal 10 MB.</small>
                       </div>
                   </div>
                   <div class="form-group">
@@ -164,6 +194,7 @@
     $("ul#account #money-transfer-menu").addClass("active");
 
     var money_transfer_id = [];
+    var money_transfer_notes = @json($lims_money_transfer_all->pluck('note', 'id'));
     var user_verified = <?php echo json_encode(env('USER_VERIFIED')) ?>;
 
 
@@ -173,11 +204,14 @@
         }
     });
 
-    $(document).on('click', '#edit-btn', function() {
+    $(document).on('click', '.edit-transfer-btn', function() {
+        var transferId = $(this).data('id');
         $("#edit-money-transfer-modal select[name='from_account_id']").val($(this).data('from_id'));
         $("#edit-money-transfer-modal select[name='to_account_id']").val($(this).data('to_id'));
-        $("#edit-money-transfer-modal input[name='id']").val($(this).data('id'));
-        $("#edit-money-transfer-modal input[name='amount']").val($(this).data('amount'));
+        $("#edit-money-transfer-modal input[name='id']").val(transferId);
+        $("#edit-money-transfer-modal input[name='amount']").val(formatLocalizedNumber($(this).data('amount')));
+        $("#edit-money-transfer-modal textarea[name='note']").val(money_transfer_notes[transferId] || '');
+        $("#edit-money-transfer-modal input[name='document']").val('');
         $('.selectpicker').selectpicker('refresh');
     });
 
@@ -202,7 +236,7 @@
         'columnDefs': [
             {
                 "orderable": false,
-                'targets': [0, 6]
+                'targets': [0, 8]
             },
             {
                 'render': function(data, type, row, meta){

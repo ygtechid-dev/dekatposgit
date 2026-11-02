@@ -1,17 +1,118 @@
 @extends('backend.layout.main') @section('content')
 
-<section class="forms">
+<style>
+    .ledger-print-header { display: none; }
+    .ledger-account-title { font-weight: 700; margin: 14px 0 6px; }
+    .ledger-table th:nth-child(4),
+    .ledger-table th:nth-child(5),
+    .ledger-table th:nth-child(6),
+    .ledger-table td:nth-child(4),
+    .ledger-table td:nth-child(5),
+    .ledger-table td:nth-child(6) { text-align: right; white-space: nowrap; }
+    .ledger-table td:nth-child(3) { white-space: normal; word-break: break-word; }
+
+    @media print {
+        @page { size: A4 landscape; margin: 10mm; }
+        html, body { background: #fff !important; color: #000 !important; font-size: 10px; }
+        #loader,
+        nav.side-navbar,
+        body > .page > header,
+        footer,
+        #print-ledger-page,
+        #ledger-filter-form,
+        .dt-buttons,
+        .dataTables_length,
+        .dataTables_filter,
+        .dataTables_info,
+        .dataTables_paginate,
+        .dataTables_processing { display: none !important; }
+        .page {
+            width: 100% !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            left: 0 !important;
+            transform: none !important;
+        }
+        .content-inner,
+        .container-fluid,
+        section.forms {
+            width: 100% !important;
+            max-width: none !important;
+            margin: 0 !important;
+            padding: 0 !important;
+        }
+        .ledger-print-header {
+            display: block !important;
+            text-align: center;
+            margin-bottom: 10px;
+        }
+        .ledger-print-header h3 {
+            margin: 0;
+            font-size: 16px;
+            font-weight: 700;
+        }
+        .ledger-print-header .period {
+            margin-top: 3px;
+            font-size: 11px;
+        }
+        .ledger-account-block {
+            page-break-inside: avoid;
+            break-inside: avoid;
+            margin-bottom: 12px !important;
+        }
+        .ledger-account-title {
+            margin: 8px 0 4px !important;
+            font-size: 11px;
+        }
+        .table-responsive {
+            overflow: visible !important;
+            display: block !important;
+            width: 100% !important;
+        }
+        table.ledger-table {
+            width: 100% !important;
+            border-collapse: collapse !important;
+            table-layout: fixed;
+            margin: 0 0 8px !important;
+        }
+        table.ledger-table th,
+        table.ledger-table td {
+            border: 1px solid #333 !important;
+            padding: 4px 5px !important;
+            vertical-align: top !important;
+            color: #000 !important;
+            background: #fff !important;
+        }
+        table.ledger-table thead th {
+            background: #eee !important;
+            font-weight: 700 !important;
+            text-align: center;
+        }
+        table.ledger-table th:nth-child(1), table.ledger-table td:nth-child(1) { width: 10%; }
+        table.ledger-table th:nth-child(2), table.ledger-table td:nth-child(2) { width: 14%; }
+        table.ledger-table th:nth-child(3), table.ledger-table td:nth-child(3) { width: 38%; }
+        table.ledger-table th:nth-child(4), table.ledger-table td:nth-child(4) { width: 12%; }
+        table.ledger-table th:nth-child(5), table.ledger-table td:nth-child(5) { width: 12%; }
+        table.ledger-table th:nth-child(6), table.ledger-table td:nth-child(6) { width: 14%; }
+    }
+</style>
+
+<section class="forms ledger-print-area">
     <div class="container-fluid">
         <h3>Buku Besar</h3>
         <button type="button" id="print-ledger-page" class="btn btn-info mb-3"><i class="fa fa-print"></i> Print Buku Besar</button>
     </div>
-    {!! Form::open(['route' => 'accounts.generalledger', 'method' => 'get']) !!}
+    <div class="ledger-print-header">
+        <h3>Buku Besar</h3>
+        <div class="period">Periode: {{ date(config('date_format'), strtotime($start_date)) }} - {{ date(config('date_format'), strtotime($end_date)) }}</div>
+    </div>
+    {!! Form::open(['route' => 'accounts.generalledger', 'method' => 'get', 'id' => 'ledger-filter-form']) !!}
     <div class="row mb-3">
         <div class="col-md-4">
-            <select name="chart_of_account_id" class="selectpicker form-control" data-live-search="true" data-live-search-style="begins" title="- Pilih Akun -" required>
+            <select name="chart_of_account_id" class="selectpicker form-control" data-live-search="true" data-live-search-style="contains" data-size="10" title="- Pilih Akun -" required>
                 <option value="all" @if($chart_of_account_id == 'all') selected @endif>- Semua Akun -</option>
                 @foreach($lims_coa_all as $coa)
-                <option value="{{ $coa->id }}" @if($chart_of_account_id == $coa->id) selected @endif>{{ $coa->code }} - {{ $coa->name }}</option>
+                <option value="{{ $coa->id }}" data-tokens="{{ $coa->code }} {{ $coa->name }}" @if($chart_of_account_id == $coa->id) selected @endif>{{ $coa->code }} - {{ $coa->name }}</option>
                 @endforeach
             </select>
         </div>
@@ -28,9 +129,10 @@
     {!! Form::close() !!}
 
     @foreach($all_ledgers as $index => $ledger)
-    <div class="mb-2"><strong>Akun:</strong> {{ $ledger['coa']->code }} - {{ $ledger['coa']->name }}</div>
+    <div class="ledger-account-block">
+    <div class="ledger-account-title"><strong>Akun:</strong> {{ $ledger['coa']->code }} - {{ $ledger['coa']->name }}</div>
     <div class="table-responsive mb-4">
-        <table id="ledger-table-{{ $index }}" class="table table-hover ledger-table">
+        <table id="ledger-table-{{ $index }}" class="table table-hover table-bordered ledger-table">
             <thead>
                 <tr>
                     <th>{{trans('file.date')}}</th>
@@ -63,6 +165,7 @@
             </tbody>
         </table>
     </div>
+    </div>
     @endforeach
 </section>
 
@@ -73,12 +176,30 @@
     $("ul#account").addClass("show");
     $("ul#account #general-ledger-menu").addClass("active");
 
+    var ledgerTables = [];
+    var ledgerPrintState = [];
+
     $('#print-ledger-page').on('click', function() {
-        window.print();
+        ledgerPrintState = [];
+        $.each(ledgerTables, function(i, table) {
+            ledgerPrintState.push(table.page.len());
+            table.page.len(-1).draw(false);
+        });
+        setTimeout(function() {
+            window.print();
+        }, 250);
+    });
+
+    window.addEventListener('afterprint', function() {
+        $.each(ledgerTables, function(i, table) {
+            if (typeof ledgerPrintState[i] !== 'undefined') {
+                table.page.len(ledgerPrintState[i]).draw(false);
+            }
+        });
     });
 
     $('.ledger-table').each(function() {
-        $(this).DataTable( {
+        var table = $(this).DataTable( {
             "order": [],
             'language': {
                 'lengthMenu': '_MENU_ {{trans("file.records per page")}}',
@@ -98,6 +219,7 @@
                 { extend: 'print', text: '<i title="print" class="fa fa-print"></i>' },
             ]
         } );
+        ledgerTables.push(table);
     });
 </script>
 @endpush

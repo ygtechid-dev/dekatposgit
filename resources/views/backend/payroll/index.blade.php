@@ -20,6 +20,7 @@
                     <th>{{trans('file.Account')}}</th>
                     <th>{{trans('file.Amount')}}</th>
                     <th>{{trans('file.Method')}}</th>
+                    <th>Lampiran</th>
                     <th class="not-exported">{{trans('file.action')}}</th>
                 </tr>
             </thead>
@@ -43,6 +44,13 @@
                     @else
                         <td>Credit Card</td>
                     @endif
+                    <td>
+                        @if($payroll->document)
+                            <a href="{{ asset('documents/payroll/' . $payroll->document) }}" target="_blank" class="btn btn-sm btn-info" title="Lihat lampiran"><i class="dripicons-document"></i></a>
+                        @else
+                            -
+                        @endif
+                    </td>
                     <td>
                         <div class="btn-group">
                             <button type="button" class="btn btn-default btn-sm dropdown-toggle" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">{{trans('file.action')}}
@@ -69,6 +77,7 @@
                 <tr>
                     <th></th>
                     <th>Total:</th>
+                    <th></th>
                     <th></th>
                     <th></th>
                     <th></th>
@@ -106,7 +115,7 @@
                     </div>
                     <div class="col-md-6 form-group">
                         <label> {{trans('file.Account')}} *</label>
-                        <select class="form-control selectpicker" name="account_id">
+                        <select class="form-control selectpicker" name="account_id" data-live-search="true" data-live-search-style="contains" data-size="10">
                         @foreach($lims_account_list as $account)
                             @if($account->is_default)
                             <option selected value="{{$account->id}}">{{$account->coa_label}}</option>
@@ -131,6 +140,11 @@
                     <div class="col-md-12 form-group">
                         <label>{{trans('file.Note')}}</label>
                         <textarea name="note" rows="3" class="form-control"></textarea>
+                    </div>
+                    <div class="col-md-12 form-group">
+                        <label>Lampiran Dokumen</label>
+                        <input type="file" name="document" class="form-control" accept=".jpg,.jpeg,.png,.gif,.pdf,.csv,.doc,.docx,.xls,.xlsx,.txt">
+                        <small class="form-text text-muted">Maksimal 10 MB.</small>
                     </div>
                 </div>
                 <div class="form-group">
@@ -168,7 +182,7 @@
                     </div>
                     <div class="col-md-6 form-group">
                         <label> {{trans('file.Account')}} *</label>
-                        <select class="form-control selectpicker" name="account_id">
+                        <select class="form-control selectpicker" name="account_id" data-live-search="true" data-live-search-style="contains" data-size="10">
                         @foreach($lims_account_list as $account)
                             @if($account->is_default)
                             <option selected value="{{$account->id}}">{{$account->coa_label}}</option>
@@ -193,6 +207,11 @@
                     <div class="col-md-12 form-group">
                         <label>{{trans('file.Note')}}</label>
                         <textarea name="note" rows="3" class="form-control"></textarea>
+                    </div>
+                    <div class="col-md-12 form-group">
+                        <label>Lampiran Dokumen</label>
+                        <input type="file" name="document" class="form-control" accept=".jpg,.jpeg,.png,.gif,.pdf,.csv,.doc,.docx,.xls,.xlsx,.txt">
+                        <small class="form-text text-muted">Kosongkan jika lampiran tidak diubah. Maksimal 10 MB.</small>
                     </div>
                 </div>
                 <div class="form-group">
@@ -238,6 +257,7 @@
         $("#editModal input[name='amount']").val( $(this).data('amount') );
         $("#editModal select[name='paying_method']").val( $(this).data('paying_method') );
         $("#editModal textarea[name='note']").val( $(this).data('note') );
+        $("#editModal input[name='document']").val('');
         $('.selectpicker').selectpicker('refresh');
     });
 
@@ -255,7 +275,7 @@
         'columnDefs': [
             {
                 "orderable": false,
-                'targets': [0, 1, 6]
+                'targets': [0, 1, 6, 7, 8]
             },
             {
                 'render': function(data, type, row, meta){

@@ -66,12 +66,14 @@
                     <th>{{trans('file.category')}}</th>
                     <th>{{trans('file.Amount')}}</th>
                     <th>{{trans('file.Note')}}</th>
+                    <th class="not-exported">Lampiran</th>
                     <th class="not-exported">{{trans('file.action')}}</th>
                 </tr>
             </thead>
             <tfoot class="tfoot active">
                 <th></th>
                 <th>{{trans('file.Total')}}</th>
+                <th></th>
                 <th></th>
                 <th></th>
                 <th></th>
@@ -92,7 +94,7 @@
             </div>
             <div class="modal-body">
               <p class="italic"><small>{{trans('file.The field labels marked with * are required input fields')}}.</small></p>
-                {!! Form::open(['route' => ['expenses.update', 1], 'method' => 'put']) !!}
+                {!! Form::open(['route' => ['expenses.update', 1], 'method' => 'put', 'files' => true]) !!}
                 <?php
                     $lims_expense_category_list = DB::table('expense_categories')->where('is_active', true)->get();
                     if(Auth::user()->role_id > 2)
@@ -135,7 +137,7 @@
                         </div>
                         <div class="col-md-6 form-group">
                             <label> {{trans('file.Account')}}</label>
-                            <select class="form-control selectpicker" name="account_id">
+                            <select class="form-control selectpicker" name="account_id" data-live-search="true" data-live-search-style="contains" data-size="10">
                             @foreach($lims_account_list as $account)
                                 @if($account->is_default)
                                 <option selected value="{{$account->id}}">{{$account->coa_label}}</option>
@@ -149,6 +151,11 @@
                   <div class="form-group">
                       <label>{{trans('file.Note')}}</label>
                       <textarea name="note" rows="3" class="form-control"></textarea>
+                  </div>
+                  <div class="form-group">
+                      <label>Lampiran Dokumen</label>
+                      <input type="file" name="document" class="form-control" accept=".jpg,.jpeg,.png,.gif,.pdf,.csv,.doc,.docx,.xls,.xlsx,.txt">
+                      <small class="form-text text-muted">Kosongkan jika lampiran tidak diubah. Maksimal 10 MB.</small>
                   </div>
                   <div class="form-group">
                       <button type="submit" class="btn btn-primary">{{trans('file.submit')}}</button>
@@ -204,6 +211,7 @@
                 $("#editModal input[name='amount']").val(data['amount']);
                 $("#editModal input[name='expense_id']").val(data['id']);
                 $("#editModal textarea[name='note']").val(data['note']);
+                $("#editModal input[name='document']").val('');
                 $('.selectpicker').selectpicker('refresh');
             });
         });
@@ -244,6 +252,7 @@
             {"data": "expenseCategory"},
             {"data": "amount"},
             {"data": "note"},
+            {"data": "document"},
             {"data": "options"}
         ],
         'language': {
@@ -260,7 +269,7 @@
         'columnDefs': [
             {
                 "orderable": false,
-                'targets': [0, 3, 4, 6, 7]
+                'targets': [0, 3, 4, 6, 7, 8]
             },
             {
                 'render': function(data, type, row, meta){

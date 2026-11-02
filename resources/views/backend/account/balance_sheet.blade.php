@@ -1,8 +1,48 @@
 @extends('backend.layout.main') @section('content')
 
+<style>
+    @media (min-width: 768px) {
+        .balance-sheet-summary > .col-md-6,
+        .balance-sheet-summary .table-responsive,
+        .balance-sheet-summary .dataTables_wrapper {
+            display: flex;
+            flex-direction: column;
+        }
+        .balance-sheet-summary .table-responsive,
+        .balance-sheet-summary .dataTables_wrapper {
+            flex: 1;
+            width: 100%;
+        }
+        .balance-sheet-summary table {
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+        }
+        .balance-sheet-summary thead,
+        .balance-sheet-summary tbody,
+        .balance-sheet-summary tfoot {
+            display: block;
+            width: 100%;
+        }
+        .balance-sheet-summary tfoot {
+            margin-top: auto;
+        }
+        .balance-sheet-summary tr {
+            display: table;
+            table-layout: fixed;
+            width: 100%;
+        }
+        .balance-sheet-summary th,
+        .balance-sheet-summary td {
+            overflow-wrap: anywhere;
+        }
+    }
+</style>
+
 <section class="forms">
-    <div class="container-fluid">
+    <div class="container-fluid d-flex justify-content-between align-items-center">
         <h3>Neraca Keuangan</h3>
+        <button type="button" id="print-balance-sheet" class="btn btn-primary"><i class="fa fa-print"></i> Print Neraca</button>
     </div>
     {!! Form::open(['route' => 'accounts.balancesheet', 'method' => 'get', 'id' => 'balance-sheet-filter']) !!}
     <div class="row mb-3">
@@ -21,7 +61,8 @@
     </div>
     {!! Form::close() !!}
 
-    <div class="row">
+    <div id="balance-sheet-print-area">
+    <div class="row balance-sheet-summary">
         <div class="col-md-6">
             <div class="table-responsive mb-4">
                 <table id="aktiva-table" class="table table-hover">
@@ -104,17 +145,18 @@
                 </tr>
             </thead>
             <tbody>
-                @foreach($lims_account_list as $key=>$account)
+                @foreach($account_rows as $row)
                 <tr>
-                    <td>{{ $account->coa_label_code }}</td>
-                    <td>{{ $account->coa_label_name }}</td>
-                    <td>{{number_format((float)$account_debit[$key], $general_setting->decimal, ',', '.')}}</td>
-                    <td>{{number_format((float)$account_credit[$key], $general_setting->decimal, ',', '.')}}</td>
-                    <td>{{number_format((float)$account_balance[$key], $general_setting->decimal, ',', '.')}}</td>
+                    <td>{{ $row['account']->coa_label_code }}</td>
+                    <td>{{ $row['account']->coa_label_name }}</td>
+                    <td>{{number_format((float)$row['debit'], $general_setting->decimal, ',', '.')}}</td>
+                    <td>{{number_format((float)$row['credit'], $general_setting->decimal, ',', '.')}}</td>
+                    <td>{{number_format((float)$row['balance'], $general_setting->decimal, ',', '.')}}</td>
                 </tr>
                 @endforeach
             </tbody>
         </table>
+    </div>
     </div>
 </section>
 
@@ -148,9 +190,23 @@
             {extend: 'pdf', text: '<i title="export to pdf" class="fa fa-file-pdf-o"></i>'},
             {extend: 'excel', text: '<i title="export to excel" class="dripicons-document-new"></i>'},
             {extend: 'csv', text: '<i title="export to csv" class="fa fa-file-text-o"></i>'},
-            {extend: 'print', text: '<i title="print" class="fa fa-print"></i>'},
         ];
     }
+
+    $('#print-balance-sheet').on('click', function() {
+        var report = $('#balance-sheet-print-area').clone();
+        report.find('.dt-buttons, .dataTables_filter, .dataTables_info, .dataTables_paginate, .dataTables_length').remove();
+        var printWindow = window.open('', '_blank');
+        printWindow.document.write('<html><head><title>Neraca Keuangan</title>' +
+            '<style>body{font-family:Arial,sans-serif;color:#222;margin:24px}h2,p{text-align:center;margin:0 0 8px}.balance-sheet-summary{display:flex;gap:24px}.balance-sheet-summary>.col-md-6{flex:1;min-width:0}.table-responsive{overflow:visible}table{width:100%;border-collapse:collapse;margin-bottom:20px}th,td{border:1px solid #bbb;padding:8px}.text-right{text-align:right}.active{font-weight:700;background:#eee}@page{size:A4 landscape;margin:12mm}</style>' +
+            '</head><body><h2>Neraca Keuangan</h2><p>Per tanggal {{ date('d/m/Y', strtotime($end_date)) }}</p>' + report.html() + '</body></html>');
+        printWindow.document.close();
+        printWindow.onload = function() {
+            printWindow.focus();
+            printWindow.print();
+            printWindow.close();
+        };
+    });
 
     $('#aktiva-table').DataTable({
         paging: false,

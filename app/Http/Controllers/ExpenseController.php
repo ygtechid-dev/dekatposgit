@@ -13,10 +13,39 @@ use Spatie\Permission\Models\Permission;
 use Auth;
 use DB;
 use App\Services\JournalService;
+use App\Traits\FileHandleTrait;
 
 class ExpenseController extends Controller
 {
-    use StaffAccess;
+    use StaffAccess, FileHandleTrait;
+
+    private function storeDocument($document)
+    {
+        $directory = public_path('documents/expense');
+        if (!is_dir($directory)) {
+            mkdir($directory, 0755, true);
+        }
+
+        $extension = strtolower($document->getClientOriginalExtension());
+        $documentName = date('YmdHis') . '-' . uniqid() . '.' . $extension;
+        $document->move($directory, $documentName);
+
+        return $documentName;
+    }
+
+    private function activeCashRegisterIdForExpense($userId, $warehouseId)
+    {
+        if(!$userId || !$warehouseId)
+            return null;
+
+        $cash_register_data = CashRegister::where([
+            ['user_id', $userId],
+            ['warehouse_id', $warehouseId],
+            ['status', true]
+        ])->first();
+
+        return $cash_register_data ? $cash_register_data->id : null;
+    }
 
     public function index(Request $request)
     {
@@ -139,6 +168,9 @@ class ExpenseController extends Controller
                 $nestedData['expenseCategory'] = $expense->expenseCategory->name;
                 $nestedData['amount'] = number_format($expense->amount, config('decimal'), ',', '.');
                 $nestedData['note'] = $expense->note;
+                $nestedData['document'] = $expense->document
+                    ? '<a href="'.asset('documents/expense/'.$expense->document).'" target="_blank" class="btn btn-sm btn-info" title="Lihat lampiran"><i class="dripicons-document"></i></a>'
+                    : '-';
                 $nestedData['options'] = '<div class="btn-group">
                             <button type="button" class="btn btn-default btn-sm dropdown-toggle" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">'.trans("file.action").'
                               <span class="caret"></span>
@@ -176,20 +208,20 @@ class ExpenseController extends Controller
 
     public function store(Request $request)
     {
-        $data = $request->all();
+        $request->validate([
+            'document' => 'nullable|file|mimes:jpg,jpeg,png,gif,pdf,csv,doc,docx,xls,xlsx,txt|max:10240',
+        ]);
+
+        $data = $request->except('document');
+        if($request->hasFile('document'))
+            $data['document'] = $this->storeDocument($request->file('document'));
         if(isset($data['created_at']))
             $data['created_at'] = date("Y-m-d H:i:s", strtotime($data['created_at']));
         else
             $data['created_at'] = date("Y-m-d H:i:s");
         $data['reference_no'] = 'er-' . date("Ymd") . '-'. date("his");
         $data['user_id'] = Auth::id();
-        $cash_register_data = CashRegister::where([
-            ['user_id', $data['user_id']],
-            ['warehouse_id', $data['warehouse_id']],
-            ['status', true]
-        ])->first();
-        if($cash_register_data)
-            $data['cash_register_id'] = $cash_register_data->id;
+        $data['cash_register_id'] = $this->activeCashRegisterIdForExpense($data['user_id'], $data['warehouse_id']);
         $lims_expense_data = Expense::create($data);
 
         //auto-post journal: record expense (Dr Akun Beban kategori / fallback Beban Operasional, Cr Kas/Bank)
@@ -219,9 +251,23 @@ class ExpenseController extends Controller
 
     public function update(Request $request, $id)
     {
-        $data = $request->all();
+        $request->validate([
+            'document' => 'nullable|file|mimes:jpg,jpeg,png,gif,pdf,csv,doc,docx,xls,xlsx,txt|max:10240',
+        ]);
+
+        $data = $request->except('document');
         $lims_expense_data = Expense::find($data['expense_id']);
+        if($request->hasFile('document')) {
+            $oldDocument = $lims_expense_data->document;
+            $data['document'] = $this->storeDocument($request->file('document'));
+            $this->fileDelete('documents/expense/', $oldDocument);
+        }
         $data['created_at'] = date("Y-m-d H:i:s", strtotime($data['created_at']));
+        $data['user_id'] = $lims_expense_data->user_id ?: Auth::id();
+        $active_cash_register_id = $this->activeCashRegisterIdForExpense($data['user_id'], $data['warehouse_id']);
+        $data['cash_register_id'] = $active_cash_register_id;
+        if(!$data['cash_register_id'] && $lims_expense_data->cash_register_id && $lims_expense_data->warehouse_id == $data['warehouse_id'])
+            $data['cash_register_id'] = $lims_expense_data->cash_register_id;
         $lims_expense_data->update($data);
 
         //auto-post journal: reverse old expense entry and repost with updated values
@@ -284,11 +330,14 @@ class ExpenseController extends Controller
         $expense_id = $request['expenseIdArray'];
         foreach ($expense_id as $id) {
             $lims_expense_data = Expense::find($id);
+            if(!$lims_expense_data)
+                continue;
             try {
                 JournalService::reverseForReference('expense', $id);
             } catch (\Throwable $e) {
                 \Log::error('Gagal menghapus jurnal pengeluaran #' . $id . ': ' . $e->getMessage());
             }
+            $this->fileDelete('documents/expense/', $lims_expense_data->document);
             $lims_expense_data->delete();
         }
         return 'Expense deleted successfully!';
@@ -297,11 +346,14 @@ class ExpenseController extends Controller
     public function destroy($id)
     {
         $lims_expense_data = Expense::find($id);
+        if(!$lims_expense_data)
+            return redirect('expenses')->with('not_permitted', 'Data pengeluaran tidak ditemukan');
         try {
             JournalService::reverseForReference('expense', $id);
         } catch (\Throwable $e) {
             \Log::error('Gagal menghapus jurnal pengeluaran #' . $id . ': ' . $e->getMessage());
         }
+        $this->fileDelete('documents/expense/', $lims_expense_data->document);
         $lims_expense_data->delete();
         return redirect('expenses')->with('not_permitted', 'Data deleted successfully');
     }

@@ -88,7 +88,7 @@
                     <th class="not-exported"></th>
                     <th>{{trans('file.date')}}</th>
                     <th>{{trans('file.reference')}}</th>
-                    <th>{{trans('file.Biller')}}</th>
+                    <th>Kasir</th>
                     <th>{{trans('file.customer')}}</th>
                     <th>{{trans('file.Sale Status')}}</th>
                     <th>{{trans('file.Payment Status')}}</th>
@@ -216,11 +216,11 @@
                         <input type="hidden" name="balance">
                         <div class="col-md-6">
                             <label>{{trans('file.Recieved Amount')}} *</label>
-                            <input type="text" name="paying_amount" class="form-control numkey" step="any" required>
+                            <input type="text" name="paying_amount" class="form-control numkey money-display-input" inputmode="decimal" required>
                         </div>
                         <div class="col-md-6">
                             <label>{{trans('file.Paying Amount')}} *</label>
-                            <input type="text" id="amount" name="amount" class="form-control"  step="any" required>
+                            <input type="text" id="amount" name="amount" class="form-control money-display-input" inputmode="decimal" required>
                         </div>
                         <div class="col-md-6 mt-1">
                             <label>{{trans('file.Change')}} : </label>
@@ -286,7 +286,7 @@
                     </div>
                     <div class="form-group">
                         <label> {{trans('file.Account')}}</label>
-                        <select class="form-control selectpicker" name="account_id">
+                        <select class="form-control selectpicker" name="account_id" data-live-search="true" data-live-search-style="contains" data-size="10">
                         @foreach($lims_account_list as $account)
                             @if($account->is_default)
                             <option selected value="{{$account->id}}">{{$account->coa_label}}</option>
@@ -322,11 +322,11 @@
                     <div class="row">
                         <div class="col-md-6">
                             <label>{{trans('file.Recieved Amount')}} *</label>
-                            <input type="text" name="edit_paying_amount" class="form-control numkey"  step="any" required>
+                            <input type="text" name="edit_paying_amount" class="form-control numkey money-display-input" inputmode="decimal" required>
                         </div>
                         <div class="col-md-6">
                             <label>{{trans('file.Paying Amount')}} *</label>
-                            <input type="text" name="edit_amount" class="form-control"  step="any" required>
+                            <input type="text" name="edit_amount" class="form-control money-display-input" inputmode="decimal" required>
                         </div>
                         <div class="col-md-6 mt-1">
                             <label>{{trans('file.Change')}} : </label>
@@ -384,7 +384,7 @@
                     </div>
                     <div class="form-group">
                         <label> {{trans('file.Account')}}</label>
-                        <select class="form-control selectpicker" name="account_id">
+                        <select class="form-control selectpicker" name="account_id" data-live-search="true" data-live-search-style="contains" data-size="10">
                         @foreach($lims_account_list as $account)
                             <option value="{{$account->id}}">{{$account->coa_label}}</option>
                         @endforeach
@@ -634,9 +634,9 @@
         // Kolom sisa piutang tampil sebagai "36.000,00". replace(/,/g,'') + parseFloat
         // menghasilkan 36 (bukan 36000), jadi pakai parser lokal yang sama dengan halaman lain.
         balance = parseLocalizedNumber(balance);
-        $('input[name="paying_amount"]').val(balance);
+        $('input[name="paying_amount"]').val(formatLocalizedNumber(balance));
         $('#add-payment input[name="balance"]').val(balance);
-        $('input[name="amount"]').val(balance);
+        $('input[name="amount"]').val(formatLocalizedNumber(balance));
         $('input[name="sale_id"]').val(sale_id);
     });
 
@@ -726,9 +726,9 @@
 
                 $('.selectpicker').selectpicker('refresh');
                 $("#payment_reference").html(payment_reference[index]);
-                $('input[name="edit_paying_amount"]').val(paying_amount[index]);
+                $('input[name="edit_paying_amount"]').val(formatLocalizedNumber(paying_amount[index]));
                 $('#edit-payment .change').text(change[index]);
-                $('input[name="edit_amount"]').val(paid_amount[index]);
+                $('input[name="edit_amount"]').val(formatLocalizedNumber(paid_amount[index]));
                 $('textarea[name="edit_payment_note"]').val(payment_note[index]);
                 $('input[name="payment_receiver"]').val(payment_receiver[index]);
                 return false;
@@ -782,7 +782,7 @@
         var id = $(this).val();
         if(expired_date[id] < current_date)
             alert('This card is expired!');
-        else if($('#add-payment input[name="amount"]').val() > balance[id]){
+        else if(parseLocalizedNumber($('#add-payment input[name="amount"]').val()) > parseLocalizedNumber(balance[id])){
             alert('Amount exceeds card balance! Gift Card balance: '+ balance[id]);
         }
     });
@@ -859,7 +859,7 @@
         var id = $(this).val();
         if(expired_date[id] < current_date)
             alert('This card is expired!');
-        else if($('#edit-payment input[name="edit_amount"]').val() > balance[id])
+        else if(parseLocalizedNumber($('#edit-payment input[name="edit_amount"]').val()) > parseLocalizedNumber(balance[id]))
             alert('Amount exceeds card balance! Gift Card balance: '+ balance[id]);
     });
 

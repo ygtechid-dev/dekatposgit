@@ -135,7 +135,7 @@
                 </div>
                 <div class="modal-body">
                   <p class="italic"><small>{{trans('file.The field labels marked with * are required input fields')}}.</small></p>
-                    {!! Form::open(['route' => 'expenses.store', 'method' => 'post']) !!}
+                    {!! Form::open(['route' => 'expenses.store', 'method' => 'post', 'files' => true]) !!}
                     <?php
                       $lims_expense_category_list = DB::table('expense_categories')->where('is_active', true)->get();
                       if(Auth::user()->role_id > 2)
@@ -185,6 +185,11 @@
                       <div class="form-group">
                           <label>{{trans('file.Note')}}</label>
                           <textarea name="note" rows="3" class="form-control"></textarea>
+                      </div>
+                      <div class="form-group">
+                          <label>Lampiran Dokumen</label>
+                          <input type="file" name="document" class="form-control" accept=".jpg,.jpeg,.png,.gif,.pdf,.csv,.doc,.docx,.xls,.xlsx,.txt">
+                          <small class="form-text text-muted">Maksimal 10 MB.</small>
                       </div>
                       <div class="form-group">
                           <button type="submit" class="btn btn-primary">{{trans('file.submit')}}</button>

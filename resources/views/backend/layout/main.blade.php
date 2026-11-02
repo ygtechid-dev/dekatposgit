@@ -5,7 +5,8 @@
   <meta charset="utf-8">
   <meta http-equiv="X-UA-Compatible" content="IE=edge">
   @if(!config('database.connections.saleprosaas_landlord'))
-  <link rel="icon" type="image/png" href="{{url('logo', $general_setting->site_logo)}}" />
+  @php($app_favicon = !empty($general_setting->favicon) ? $general_setting->favicon : $general_setting->site_logo)
+  <link rel="icon" type="image/png" href="{{url('logo/'.$app_favicon)}}" />
   <title>{{$general_setting->site_title}}</title>
   <meta name="description" content="">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -85,7 +86,8 @@
   <link rel="stylesheet" href="<?php echo asset('css/custom-rtl.css') ?>" type="text/css" id="custom-style">
   @endif
   @else
-  <link rel="icon" type="image/png" href="{{url('../../logo', $general_setting->site_logo)}}" />
+  @php($app_favicon = !empty($general_setting->favicon) ? $general_setting->favicon : $general_setting->site_logo)
+  <link rel="icon" type="image/png" href="{{url('../../logo/'.$app_favicon)}}" />
   <title>{{$general_setting->site_title}}</title>
   <meta name="description" content="">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -606,7 +608,7 @@
           </div>
           <div class="modal-body">
             <p class="italic"><small>{{trans('file.The field labels marked with * are required input fields')}}.</small></p>
-            {!! Form::open(['route' => 'expenses.store', 'method' => 'post']) !!}
+            {!! Form::open(['route' => 'expenses.store', 'method' => 'post', 'files' => true]) !!}
             <?php
             $lims_expense_category_list = DB::table('expense_categories')->where('is_active', true)->get();
             if (Auth::user()->role_id > 2)
@@ -645,7 +647,7 @@
               </div>
               <div class="col-md-6 form-group">
                 <label> {{trans('file.Account')}}</label>
-                <select class="form-control selectpicker" name="account_id">
+                <select class="form-control selectpicker" name="account_id" data-live-search="true" data-live-search-style="contains" data-size="10">
                   @foreach($lims_account_list as $account)
                   @if($account->is_default)
                   <option selected value="{{$account->id}}">{{$account->coa_label}}</option>
@@ -659,6 +661,11 @@
             <div class="form-group">
               <label>{{trans('file.Note')}}</label>
               <textarea name="note" rows="3" class="form-control"></textarea>
+            </div>
+            <div class="form-group">
+              <label>Lampiran Dokumen</label>
+              <input type="file" name="document" class="form-control" accept=".jpg,.jpeg,.png,.gif,.pdf,.csv,.doc,.docx,.xls,.xlsx,.txt">
+              <small class="form-text text-muted">Maksimal 10 MB.</small>
             </div>
             <div class="form-group">
               <button type="submit" class="btn btn-primary">{{trans('file.submit')}}</button>
@@ -742,7 +749,7 @@
             <div class="row">
               <div class="col-md-6 form-group">
                 <label> {{trans('file.Account')}}</label>
-                <select class="form-control selectpicker" name="account_id">
+                <select class="form-control selectpicker" name="account_id" data-live-search="true" data-live-search-style="contains" data-size="10">
                   @foreach($lims_account_list as $account)
                   <option value="{{$account->id}}">{{$account->coa_label}}</option>
                   @endforeach
@@ -1122,6 +1129,25 @@
       return (negative ? '-' : '') + (parts.length > 1 ? parts[0] + ',' + parts[1] : parts[0]);
     };
 
+    window.normalizeMoneyInput = function(value) {
+      var n = window.parseLocalizedNumber(value);
+      return n ? n.toString() : '0';
+    };
+
+    $(document).on('blur', '.money-display-input', function() {
+      var value = $(this).val();
+      if (value === '') return;
+      $(this).val(window.formatLocalizedNumber(value));
+    });
+
+    $(document).on('submit', 'form', function() {
+      $(this).find('.money-display-input[name]').each(function() {
+        if ($(this).val() !== '') {
+          $(this).val(window.normalizeMoneyInput($(this).val()));
+        }
+      });
+    });
+
     /*
      * Re-register DataTables' sum() plug-in INLINE.
      *
@@ -1165,7 +1191,7 @@
         'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
       }
     });
-    var theme = <?php echo json_encode($theme); ?>;
+	    var theme = <?php echo json_encode($theme); ?>;
     if (theme == 'dark') {
       $('body').addClass('dark-mode');
       $('#switch-theme i').addClass('dripicons-brightness-low');
@@ -1323,30 +1349,71 @@
 
     (function() {
       var draftPrefix = 'dekatpos:form-draft:';
+      var draftServerUrl = "{{ route('app-drafts.show') }}";
+      var draftServerStoreUrl = "{{ route('app-drafts.store') }}";
+      var draftServerDeleteUrl = "{{ route('app-drafts.destroy') }}";
+      var draftTimers = {};
+      var pendingDraftKey = 'dekatpos:pending-form-draft';
+
+      @if(session()->has('message'))
+      try {
+        var completedDraft = JSON.parse(sessionStorage.getItem(pendingDraftKey) || 'null');
+        if (completedDraft && completedDraft.localKey && completedDraft.serverScope) {
+          localStorage.removeItem(completedDraft.localKey);
+          $.ajax({
+            url: draftServerDeleteUrl,
+            type: 'DELETE',
+            data: { scope: completedDraft.serverScope }
+          });
+        }
+        sessionStorage.removeItem(pendingDraftKey);
+      } catch (e) {
+        sessionStorage.removeItem(pendingDraftKey);
+      }
+      @endif
+
+      function applyFormDraft($form, values) {
+        if (!values) return;
+        var fieldIndexes = {};
+        $.each(values, function(i, field) {
+          var selector = '[name="' + field.name.replace(/"/g, '\\"') + '"]';
+          var $fields = $form.find(selector);
+          if (!$fields.length || $fields.first().attr('type') === 'file' || $fields.first().attr('type') === 'password') return;
+          if ($fields.first().is('[data-draft-ignore]')) return;
+          if ($fields.first().is(':checkbox,:radio')) {
+            $fields.filter('[value="' + String(field.value).replace(/"/g, '\\"') + '"]').prop('checked', true);
+          }
+          else {
+            var fieldIndex = fieldIndexes[field.name] || 0;
+            var $field = $fields.length > 1 ? $fields.eq(fieldIndex) : $fields;
+            $field.val(field.value);
+            fieldIndexes[field.name] = fieldIndex + 1;
+          }
+        });
+        if ($.fn.selectpicker) $form.find('.selectpicker').selectpicker('refresh');
+      }
+
       $('form').each(function(index) {
         var $form = $(this);
         var method = String($form.attr('method') || '').toLowerCase();
-        if (method !== 'post' || $form.find('input[name="_method"][value="DELETE"]').length) return;
+        var spoofedMethod = String($form.find('input[name="_method"]').first().val() || '').toUpperCase();
+        if (method !== 'post' || ['PUT', 'PATCH', 'DELETE'].indexOf(spoofedMethod) !== -1) return;
         var formId = $form.attr('id') || $form.attr('action') || ('form-' + index);
         var draftKey = draftPrefix + location.pathname + ':' + formId;
+        var serverScope = 'form:' + location.pathname + ':' + formId;
 
         try {
           var raw = localStorage.getItem(draftKey);
           if (raw) {
-            var values = JSON.parse(raw);
-            $.each(values, function(i, field) {
-              var $field = $form.find('[name="' + field.name.replace(/"/g, '\\"') + '"]');
-              if (!$field.length || $field.attr('type') === 'file' || $field.attr('type') === 'password') return;
-              if ($field.is(':checkbox,:radio')) {
-                $field.filter('[value="' + String(field.value).replace(/"/g, '\\"') + '"]').prop('checked', true);
-              }
-              else {
-                $field.val(field.value);
-              }
-            });
-            if ($.fn.selectpicker) $form.find('.selectpicker').selectpicker('refresh');
+            applyFormDraft($form, JSON.parse(raw));
           }
         } catch (e) {}
+
+        $.get(draftServerUrl, { scope: serverScope }, function(resp) {
+          if (resp && resp.draft) {
+            applyFormDraft($form, resp.draft);
+          }
+        });
 
         $form.on('input change', 'input, select, textarea', function() {
           try {
@@ -1354,26 +1421,33 @@
               return field.name !== '_token' && field.name !== '_method';
             });
             localStorage.setItem(draftKey, JSON.stringify(values));
+            clearTimeout(draftTimers[draftKey]);
+            draftTimers[draftKey] = setTimeout(function() {
+              $.post(draftServerStoreUrl, {
+                scope: serverScope,
+                draft: values
+              });
+            }, 700);
           } catch (e) {}
         });
 
-        $form.on('submit', function() {
-          localStorage.removeItem(draftKey);
+        $form.on('submit', function(event) {
+          if (event.isDefaultPrevented()) return;
+          try {
+            var values = $form.serializeArray().filter(function(field) {
+              return field.name !== '_token' && field.name !== '_method';
+            });
+            localStorage.setItem(draftKey, JSON.stringify(values));
+            sessionStorage.setItem(pendingDraftKey, JSON.stringify({
+              localKey: draftKey,
+              serverScope: serverScope
+            }));
+          } catch (e) {}
         });
       });
     })();
 
-
-    setInterval(function() {
-      $.ajax({
-        url: "{{route('session')}}",
-        type: "POST",
-        success: function(response) {
-          //alert('session alive');
-        },
-      });
-    }, 5000);
-  </script>
+	  </script>
 </body>
 
 </html>

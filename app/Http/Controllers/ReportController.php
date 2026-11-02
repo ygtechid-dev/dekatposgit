@@ -4676,9 +4676,9 @@ class ReportController extends Controller
 
     public function supplierDueReportByDate(Request $request)
     {
-        $data = $request->all();
-        $start_date = $data['start_date'];
-        $end_date = $data['end_date'];
+        // Allow the report to be opened directly with GET as well as submitted by POST.
+        $start_date = $request->input('start_date', date('Y-m-01'));
+        $end_date = $request->input('end_date', date('Y-m-d'));
         $q = Purchase::where('payment_status', 1)
             ->whereDate('created_at', '>=' , $start_date)
             ->whereDate('created_at', '<=' , $end_date);

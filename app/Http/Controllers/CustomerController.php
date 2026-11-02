@@ -60,11 +60,16 @@ class CustomerController extends Controller
             if(empty($all_permission))
                 $all_permission[] = 'dummy text';
             $lims_customer_all = Customer::with('customerGroup')->where('is_active', true)->get();
+            $lims_account_list = Account::with('chartOfAccount')
+                ->where('is_active', true)
+                ->orderByDesc('is_default')
+                ->orderBy('name')
+                ->get();
             $custom_fields = CustomField::where([
                                 ['belongs_to', 'customer'],
                                 ['is_table', true]
                             ])->pluck('name');
-            return view('backend.customer.index', compact('lims_customer_all', 'all_permission', 'custom_fields'));
+            return view('backend.customer.index', compact('lims_customer_all', 'lims_account_list', 'all_permission', 'custom_fields'));
         }
         else
             return redirect()->back()->with('not_permitted', 'Sorry! You are not allowed to access this module');
@@ -78,64 +83,95 @@ class CustomerController extends Controller
 
         $request->validate([
             'customer_id' => 'required',
+            'account_id' => ['required', Rule::exists('accounts', 'id')->where('is_active', true)],
             'amount' => 'required|numeric|min:0.01',
         ]);
 
-        $lims_due_sale_data = Sale::select('id', 'warehouse_id', 'grand_total', 'paid_amount', 'payment_status')
-                            ->where([
-                                ['payment_status', '!=', 4],
-                                ['customer_id', $request->customer_id]
-                            ])->orderBy('id')->get();
-        $total_paid_amount = $request->amount;
-        $account_data = Account::select('id')->where('is_default', 1)->first();
-        $piutang_id = JournalService::accountIdByCode(JournalService::PIUTANG_USAHA);
-        $kas_id = JournalService::coaIdForCashAccount($account_data ? $account_data->id : null);
+        $account_data = Account::with('chartOfAccount')
+            ->where('is_active', true)
+            ->find($request->account_id);
 
-        foreach ($lims_due_sale_data as $key => $sale_data) {
-            if($total_paid_amount == 0)
-                break;
-            $due_amount = $sale_data->grand_total - $sale_data->paid_amount;
-            $lims_cash_register_data =  CashRegister::select('id')
-                                        ->where([
-                                            ['user_id', Auth::id()],
-                                            ['warehouse_id', $sale_data->warehouse_id],
-                                            ['status', 1]
-                                        ])->first();
-            if($lims_cash_register_data)
-                $cash_register_id = $lims_cash_register_data->id;
-            else
-                $cash_register_id = null;
-            if($total_paid_amount >= $due_amount) {
-                $paid_amount = $due_amount;
-                $payment_status = 4;
-            }
-            else {
-                $paid_amount = $total_paid_amount;
-                $payment_status = 2;
-            }
-            $lims_payment_data = Payment::create([
-                'payment_reference' => 'spr-'.date("Ymd").'-'.date("his"),
-                'sale_id' => $sale_data->id,
-                'user_id' => Auth::id(),
-                'cash_register_id' => $cash_register_id,
-                'account_id' => $account_data ? $account_data->id : null,
-                'amount' => $paid_amount,
-                'change' => 0,
-                'paying_method' => 'Cash',
-                'payment_note' => $request->note
-            ]);
-            $sale_data->paid_amount += $paid_amount;
-            $sale_data->payment_status = $payment_status;
-            $sale_data->save();
-            $total_paid_amount -= $paid_amount;
+        try {
+            DB::transaction(function () use ($request, $account_data) {
+                $lims_due_sale_data = Sale::select('id', 'reference_no', 'warehouse_id', 'grand_total', 'paid_amount', 'payment_status')
+                    ->where([
+                        ['payment_status', '!=', 4],
+                        ['customer_id', $request->customer_id]
+                    ])
+                    ->orderBy('id')
+                    ->lockForUpdate()
+                    ->get();
 
-            // Jurnal otomatis: pembayaran piutang -> Dr Kas / Cr Piutang Usaha
-            // (sama seperti pembayaran per-invoice biasa di SaleController).
-            try {
-                JournalService::postSimple(now(), 'Pembayaran piutang ' . $sale_data->id, $kas_id, $piutang_id, $paid_amount, 'sale_payment', $lims_payment_data->id);
-            } catch (\Exception $e) {}
+                $outstanding = round((float) $lims_due_sale_data->sum(function ($sale) {
+                    return max((float) $sale->grand_total - (float) $sale->paid_amount, 0);
+                }), 2);
+                $total_paid_amount = round((float) $request->amount, 2);
+
+                if ($outstanding <= 0) {
+                    throw new \RuntimeException('Piutang pelanggan sudah lunas.');
+                }
+                if ($total_paid_amount - $outstanding > 0.005) {
+                    throw new \RuntimeException('Jumlah pembayaran melebihi sisa piutang pelanggan.');
+                }
+
+                // The selected legacy Account is resolved to its own COA here.
+                // Posting and invoice updates share one transaction: a journal
+                // failure can no longer leave a payment invisible in Neraca.
+                $kas_id = JournalService::coaIdForCashAccount($account_data->id);
+
+                foreach ($lims_due_sale_data as $key => $sale_data) {
+                    if($total_paid_amount <= 0.005)
+                        break;
+
+                    $due_amount = round((float) $sale_data->grand_total - (float) $sale_data->paid_amount, 2);
+                    if ($due_amount <= 0)
+                        continue;
+
+                    $lims_cash_register_data = CashRegister::select('id')
+                        ->where([
+                            ['user_id', Auth::id()],
+                            ['warehouse_id', $sale_data->warehouse_id],
+                            ['status', 1]
+                        ])->first();
+                    $paid_amount = min($total_paid_amount, $due_amount);
+                    $payment_status = $paid_amount >= $due_amount ? 4 : 2;
+
+                    $lims_payment_data = Payment::create([
+                        'payment_reference' => 'spr-' . date('Ymd-His') . '-' . ($key + 1),
+                        'sale_id' => $sale_data->id,
+                        'user_id' => Auth::id(),
+                        'cash_register_id' => $lims_cash_register_data ? $lims_cash_register_data->id : null,
+                        'account_id' => $account_data->id,
+                        'amount' => $paid_amount,
+                        'change' => 0,
+                        'paying_method' => 'Cash',
+                        'payment_note' => $request->note
+                    ]);
+
+                    $sale_data->paid_amount = round((float) $sale_data->paid_amount + $paid_amount, 2);
+                    $sale_data->payment_status = $payment_status;
+                    $sale_data->save();
+
+                    $piutang_id = JournalService::receivableAccountIdForWarehouse($sale_data->warehouse_id);
+                    JournalService::postSimple(
+                        now(),
+                        'Pembayaran piutang ' . $sale_data->reference_no . ' via ' . $account_data->coa_label,
+                        $kas_id,
+                        $piutang_id,
+                        $paid_amount,
+                        'sale_payment',
+                        $lims_payment_data->id
+                    );
+
+                    $total_paid_amount = round($total_paid_amount - $paid_amount, 2);
+                }
+            });
+        } catch (\Throwable $e) {
+            \Log::error('Gagal memproses pembayaran piutang customer #' . $request->customer_id . ': ' . $e->getMessage());
+            return redirect()->back()->withInput()->with('not_permitted', 'Pembayaran piutang dibatalkan: ' . $e->getMessage());
         }
-        return redirect()->back()->with('message', 'Due cleared successfully');
+
+        return redirect()->back()->with('message', 'Pembayaran piutang berhasil disimpan dan diposting ke neraca.');
     }
 
     /**
@@ -153,20 +189,34 @@ class CustomerController extends Controller
         $lims_customer_due = Customer::where('is_active', true)
             ->get()
             ->map(function($customer) {
-                $due = Sale::where([
+                $dueQuery = Sale::where([
                     ['customer_id', $customer->id],
                     ['payment_status', '!=', 4],
-                ])->selectRaw('COALESCE(SUM(grand_total - paid_amount), 0) as total_due')->value('total_due');
+                ]);
+                $due = (clone $dueQuery)->selectRaw('COALESCE(SUM(grand_total - paid_amount), 0) as total_due')->value('total_due');
                 $customer->total_due = (float) $due;
+                $customer->has_unpaid_invoice = (clone $dueQuery)->where('payment_status', 1)->exists();
+                $customer->oldest_due_at = (clone $dueQuery)->min('created_at');
                 return $customer;
             })
             ->filter(function($customer) {
                 return $customer->total_due > 0.009;
             })
-            ->sortByDesc('total_due')
+            ->sort(function($a, $b) {
+                if ($a->has_unpaid_invoice != $b->has_unpaid_invoice) {
+                    return $a->has_unpaid_invoice ? -1 : 1;
+                }
+                return strcmp((string) $a->oldest_due_at, (string) $b->oldest_due_at);
+            })
             ->values();
 
-        return view('backend.customer.due_payment', compact('lims_customer_due'));
+        $lims_account_list = Account::with('chartOfAccount')
+            ->where('is_active', true)
+            ->orderByDesc('is_default')
+            ->orderBy('name')
+            ->get();
+
+        return view('backend.customer.due_payment', compact('lims_customer_due', 'lims_account_list'));
     }
 
     /**
@@ -181,7 +231,8 @@ class CustomerController extends Controller
                 ['customer_id', $id],
                 ['payment_status', '!=', 4],
             ])
-            ->orderBy('id')
+            ->orderByRaw('CASE WHEN payment_status = 1 THEN 0 ELSE 1 END')
+            ->orderBy('created_at')
             ->get(['id', 'reference_no', 'created_at', 'grand_total', 'paid_amount']);
 
         $data = $sales->map(function($sale) {

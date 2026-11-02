@@ -64,6 +64,9 @@
 .ps-line:last-child{border-bottom:none}
 .ps-line .lbl{color:#5d6478;font-size:13px}
 .ps-line .val{font-weight:700;color:#2f3542}
+.ps-line .ps-select-val{width:62%;max-width:62%}
+.ps-line .ps-native-select{width:100%;height:34px;border:1px solid #dde2ec;border-radius:4px;background:#fff;color:var(--theme-color,#7c5cc4);font-weight:700;padding:4px 28px 4px 8px}
+.ps-line .ps-native-select:focus{border-color:var(--theme-color,#7c5cc4);outline:0;box-shadow:0 0 0 .15rem rgba(124,92,196,.2)}
 .ps-badge{background:#e4e6fc;color:#6244a6;border-radius:3px;padding:2px 8px;font-size:11px;font-weight:700}
 
 .ps-actionbar{position:fixed;left:0;right:0;bottom:0;background:#fff;border-top:1px solid #e6e9f0;
@@ -220,8 +223,8 @@
                     </div>
                     <div class="ps-line">
                         <span class="lbl">Gudang</span>
-                        <span class="val" style="max-width:60%">
-                            <select id="ps-warehouse" class="form-control form-control-sm">
+                        <span class="val ps-select-val">
+                            <select id="ps-warehouse" class="form-control form-control-sm ps-native-select">
                                 @foreach($warehouse_list as $warehouse)
                                 <option value="{{$warehouse->id}}" @if($warehouse->id == $default_warehouse_id) selected @endif>{{$warehouse->name}}</option>
                                 @endforeach
@@ -230,8 +233,8 @@
                     </div>
                     <div class="ps-line">
                         <span class="lbl">Pelanggan</span>
-                        <span class="val" style="max-width:60%">
-                            <select id="ps-customer" class="form-control form-control-sm">
+                        <span class="val ps-select-val">
+                            <select id="ps-customer" class="form-control form-control-sm ps-native-select">
                                 @foreach($customer_list as $customer)
                                 <option value="{{$customer->id}}" @if($customer->id == $default_customer_id) selected @endif>{{$customer->name}}</option>
                                 @endforeach
@@ -470,12 +473,12 @@
                     <input type="hidden" name="cash_register_id">
                     <div class="form-group">
                         <label>{{ \Auth::user()->role_id <= 2 ? 'Uang Fisik Dihitung *' : 'Uang Fisik Dihitung / Setor Kasir *' }}</label>
-                        <input type="number" step="any" name="closing_cash_amount" required class="form-control">
+                        <input type="text" inputmode="decimal" name="closing_cash_amount" required class="form-control money-display-input">
                     </div>
                     @if(\Auth::user()->role_id <= 2)
                     <div class="form-group">
                         <label>Setor Kasir</label>
-                        <input type="number" step="any" name="deposit_amount" class="form-control">
+                        <input type="text" inputmode="decimal" name="deposit_amount" class="form-control money-display-input">
                     </div>
                     @endif
                     <div class="form-group">
@@ -522,6 +525,13 @@
     var DEC = {{ (int) $general_setting->decimal }};
     var URL_SEARCH = "{{ route('sale.posSimple.search') }}";
     var VOID_KEY = 'pos_simple_void_v1';
+    var SERVER_DRAFT_SCOPE = 'pos-simple';
+    var URL_DRAFT_SHOW = "{{ route('app-drafts.show') }}";
+    var URL_DRAFT_STORE = "{{ route('app-drafts.store') }}";
+    var URL_DRAFT_DELETE = "{{ route('app-drafts.destroy') }}";
+    var CSRF_TOKEN = $('meta[name="csrf-token"]').attr('content');
+    var draftTimer = null;
+    var draftReady = false;
 
     /* ---------------- util angka ---------------- */
     function fmt(n) {
@@ -530,6 +540,14 @@
         var parts = n.toFixed(DEC).split('.');
         parts[0] = parts[0].replace(/\B(?=(\d{3})+(?!\d))/g, '.');
         return parts.join(DEC > 0 ? ',' : '');
+    }
+    function fmtStock(n) {
+        n = parseFloat(n);
+        if (isNaN(n)) n = 0;
+        if (Math.abs(n - Math.round(n)) < 0.0001) {
+            return String(Math.round(n)).replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+        }
+        return fmt(n);
     }
     /* "12.500,50" / "12500" -> 12500.5 */
     function num(v) {
@@ -552,11 +570,12 @@
     /* front.js menjalankan $('select').selectpicker() untuk seluruh halaman, jadi
        setiap kali nilai select diubah lewat JS labelnya harus disegarkan. */
     function refreshPicker($el) {
+        if ($el.hasClass('ps-native-select')) return;
         try { if ($el.data('selectpicker')) $el.selectpicker('refresh'); } catch (e) { }
     }
 
     /* ---------------- state ---------------- */
-    var cart = [];        /* {id, code, name, unit, gross, disc, qty, stock} */
+    var cart = [];        /* {id, code, name, unit, gross, disc, qty, stock, units} */
     var sel = -1;         /* baris terpilih */
     var busy = false;     /* cegah submit ganda */
 
@@ -567,6 +586,11 @@
     /* ---------------- render ---------------- */
     function rowNett(it) { return Math.max(0, num(it.gross) - num(it.disc)); }
     function rowTotal(it) { return rowNett(it) * num(it.qty); }
+    function unitCostOfRow(it) {
+        var unit = unitOfRow(it);
+        if (unit && unit.cost !== undefined) return num(unit.cost);
+        return num(it.base_cost) * (num(it.stock_factor) || 1);
+    }
 
     function grandTotal() {
         var t = 0;
@@ -596,7 +620,7 @@
                     '<td><strong>' + it.name + '</strong>' +
                         '<div style="font-size:11px" class="' + (isOverStock(it) ? 'text-danger font-weight-bold' : 'text-muted') + '">' +
                         (unitLabel ? '<span class="badge badge-light border">' + unitLabel + '</span> ' : '') +
-                        'sisa ' + fmt(stockInUnit(it)) + '</div></td>' +
+                        'Sisa Stok: ' + fmtStock(stockInUnit(it)) + '</div></td>' +
                     '<td class="ps-qty"><input type="text" class="ps-in ps-f-qty" value="' + it.qty + '"></td>' +
                     '<td class="ps-gross"><input type="text" class="ps-in ps-f-gross" value="' + fmt(it.gross) + '"></td>' +
                     '<td class="ps-disc"><input type="text" class="ps-in ps-f-disc" value="' + fmt(it.disc) + '"></td>' +
@@ -679,7 +703,7 @@
         var sisa = num(addCtx.product.stock) / factor;
 
         $('#ps-add-price').text(fmt(price) + ' / ' + unit.name);
-        $('#ps-add-stock').text(fmt(sisa) + ' ' + (unit.name === 'n/a' ? '' : unit.name));
+        $('#ps-add-stock').text(fmtStock(sisa) + ' ' + (unit.name === 'n/a' ? '' : unit.name));
         $('#ps-add-total').text(fmt(price * qty));
         $('#ps-add-stock').closest('div').toggleClass('text-danger', qty > sisa + 0.0001);
     }
@@ -763,6 +787,7 @@
         if (idx > -1) {
             cart[idx].unit = unit.name;
             cart[idx].stock_factor = num(unit.stock_factor) || 1;
+            cart[idx].base_cost = num(p.base_cost);
             cart[idx].gross = price;
             cart[idx].qty = qty;
         } else {
@@ -774,13 +799,14 @@
             if (idx > -1) {
                 cart[idx].qty = num(cart[idx].qty) + qty;
                 cart[idx].units = p.units;
+                cart[idx].base_cost = num(p.base_cost);
                 var re = tierPrice(unit, cart[idx].qty);
                 cart[idx].gross = (re !== null) ? re : num(unit.price);
             } else {
                 cart.unshift({
                     id: p.id, code: p.code, name: p.name,
                     unit: unit.name, stock_factor: num(unit.stock_factor) || 1,
-                    units: p.units, stock: num(p.stock),
+                    units: p.units, stock: num(p.stock), base_cost: num(p.base_cost),
                     gross: price, disc: 0, qty: qty
                 });
                 idx = 0;
@@ -799,7 +825,7 @@
         if (it.units && it.units.length) {
             openAddModal({
                 id: it.id, code: it.code, name: it.name,
-                units: it.units, stock: it.stock
+                units: it.units, stock: it.stock, base_cost: it.base_cost
             }, sel);
             return;
         }
@@ -855,18 +881,108 @@
     }
 
     /* ---------------- simpan sementara di browser ---------------- */
-    function saveLocal() {
-        try { localStorage.setItem('pos_simple_cart', JSON.stringify(cart)); } catch (e) { }
+    function draftPayload() {
+        return {
+            cart: cart,
+            warehouse_id: $('#ps-warehouse').val(),
+            customer_id: $('#ps-customer').val(),
+            price_level: $('#ps-price-level').val()
+        };
     }
+
+    function saveLocal() {
+        try { localStorage.setItem('pos_simple_cart', JSON.stringify(draftPayload())); } catch (e) { }
+        if (!draftReady) return;
+        clearTimeout(draftTimer);
+        draftTimer = setTimeout(function() {
+            $.ajax({
+                url: URL_DRAFT_STORE,
+                type: 'POST',
+                data: {
+                    _token: CSRF_TOKEN,
+                    scope: SERVER_DRAFT_SCOPE,
+                    draft: draftPayload()
+                }
+            });
+        }, 700);
+    }
+
+    function applyDraft(draft) {
+        if (!draft) return;
+        if ($.isArray(draft)) {
+            cart = draft;
+            return;
+        }
+        cart = draft.cart || [];
+        if (draft.warehouse_id) {
+            $('#ps-warehouse').val(draft.warehouse_id).data('prev', draft.warehouse_id);
+            refreshPicker($('#ps-warehouse'));
+        }
+        if (draft.customer_id) {
+            $('#ps-customer').val(draft.customer_id);
+            refreshPicker($('#ps-customer'));
+        }
+        if (draft.price_level) {
+            $('#ps-price-level').val(draft.price_level).data('prev', draft.price_level);
+            refreshPicker($('#ps-price-level'));
+        }
+    }
+
     function loadLocal() {
         try {
             var raw = localStorage.getItem('pos_simple_cart');
-            if (raw) cart = JSON.parse(raw) || [];
+            if (raw) applyDraft(JSON.parse(raw));
         } catch (e) { cart = []; }
     }
 
+    function loadServerDraft() {
+        $.get(URL_DRAFT_SHOW, { scope: SERVER_DRAFT_SCOPE }, function(resp) {
+            if (resp && resp.draft) {
+                applyDraft(resp.draft);
+                render();
+                selectRow(cart.length ? 0 : -1);
+            }
+            draftReady = true;
+            checkCashRegister($('#ps-warehouse').val());
+            loadPromos();
+            setTimeout(focusSearch, 300);
+        }).fail(function() {
+            draftReady = true;
+            checkCashRegister($('#ps-warehouse').val());
+            loadPromos();
+            setTimeout(focusSearch, 300);
+        });
+    }
+
+    function clearServerDraft() {
+        try { localStorage.removeItem('pos_simple_cart'); } catch (e) { }
+        $.ajax({
+            url: URL_DRAFT_DELETE,
+            type: 'DELETE',
+            data: {
+                _token: CSRF_TOKEN,
+                scope: SERVER_DRAFT_SCOPE
+            }
+        });
+    }
+
+    function initHeaderPickers() {
+        $('#ps-warehouse, #ps-customer').each(function() {
+            var $el = $(this);
+            try {
+                if ($el.data('selectpicker')) {
+                    $el.selectpicker('destroy');
+                }
+            } catch (e) { }
+            if ($el.closest('.bootstrap-select').length) {
+                $el.closest('.bootstrap-select').replaceWith($el.detach());
+            }
+            $el.removeClass('selectpicker ps-header-picker').addClass('ps-native-select').show().prop('disabled', false);
+        });
+    }
+
     /* ---------------- pencarian produk ---------------- */
-    var timer = null, sgIndex = -1, sgData = [];
+    var timer = null, sgIndex = -1, sgData = [], sgTerm = '';
 
     function focusSearch() {
         sel = -1;
@@ -874,9 +990,10 @@
         $search.focus().select();
     }
 
-    function hideSuggest() { $suggest.hide(); sgIndex = -1; sgData = []; }
+    function hideSuggest() { $suggest.hide(); sgIndex = -1; sgData = []; sgTerm = ''; }
 
-    function drawSuggest(list) {
+    function drawSuggest(list, term) {
+        sgTerm = term || '';
         sgData = list; sgIndex = list.length ? 0 : -1;
         if (!list.length) {
             $suggest.html('<div class="ps-empty">Barang tidak ditemukan.</div>').show();
@@ -915,7 +1032,9 @@
     function pickProduct(p) {
         $search.val('');
         hideSuggest();
-        openAddModal(p);
+        setTimeout(function() {
+            openAddModal(p);
+        }, 0);
     }
 
     $search.on('input', function () {
@@ -923,7 +1042,10 @@
         clearTimeout(timer);
         if (q.length < 2) { hideSuggest(); return; }
         timer = setTimeout(function () {
-            doSearch(q, false, drawSuggest);
+            doSearch(q, false, function(list) {
+                if ($.trim($search.val()) !== q) return;
+                drawSuggest(list, q);
+            });
         }, 250);
     });
 
@@ -934,7 +1056,7 @@
             e.preventDefault();
             var q = $.trim($(this).val());
             if (!q) return;
-            if ($suggest.is(':visible') && sgIndex > -1 && sgData[sgIndex]) {
+            if ($suggest.is(':visible') && sgTerm === q && sgIndex > -1 && sgData[sgIndex]) {
                 pickProduct(sgData[sgIndex]);
                 return;
             }
@@ -942,7 +1064,10 @@
             clearTimeout(timer);
             doSearch(q, true, function (list) {
                 if (list.length === 1) pickProduct(list[0]);
-                else doSearch(q, false, drawSuggest);
+                else doSearch(q, false, function(items) {
+                    if ($.trim($search.val()) !== q) return;
+                    drawSuggest(items, q);
+                });
             });
         }
     });
@@ -981,6 +1106,8 @@
         var i = parseInt($(this).closest('tr').data('i'), 10);
         if (isNaN(i) || !cart[i]) return;
         var v = num($(this).val());
+        var editedPrice = $(this).hasClass('ps-f-gross');
+        var editedDisc = $(this).hasClass('ps-f-disc');
         if ($(this).hasClass('ps-f-qty')) {
             cart[i].qty = v > 0 ? v : 1;
             /* qty diketik manual -> harga ikut naik/turun sesuai tier harga banyak */
@@ -989,6 +1116,16 @@
         else if ($(this).hasClass('ps-f-gross')) cart[i].gross = v;
         else cart[i].disc = (v < 0 ? 0 : v);
         if (cart[i].disc > cart[i].gross) cart[i].disc = cart[i].gross;
+        var minCost = unitCostOfRow(cart[i]);
+        if (minCost > 0 && rowNett(cart[i]) + 0.0001 < minCost) {
+            alert('Harga jual tidak boleh di bawah HPP. Minimal: ' + fmt(minCost));
+            if (editedDisc)
+                cart[i].disc = Math.max(0, num(cart[i].gross) - minCost);
+            else if (editedPrice)
+                cart[i].gross = minCost + num(cart[i].disc);
+            else
+                cart[i].gross = minCost + num(cart[i].disc);
+        }
         render(); selectRow(i);
     });
 
@@ -1112,6 +1249,15 @@
         }
         if (!$('#ps-customer').val()) { alert('Pelanggan belum dipilih.'); return false; }
 
+        for (var j = 0; j < cart.length; j++) {
+            var minCost = unitCostOfRow(cart[j]);
+            if (minCost > 0 && rowNett(cart[j]) + 0.0001 < minCost) {
+                alert('Harga jual "' + cart[j].name + '" tidak boleh di bawah HPP. Minimal: ' + fmt(minCost));
+                selectRow(j);
+                return false;
+            }
+        }
+
         /* peringatan stok minus (tidak memblokir, sesuai perilaku POS lama) */
         var over = [];
         for (var i = 0; i < cart.length; i++) {
@@ -1127,7 +1273,7 @@
         busy = true;
         $('.ps-act, #ps-pay-submit').prop('disabled', true);
         buildForm(paidById, payingAmount, paidAmount);
-        try { localStorage.removeItem('pos_simple_cart'); } catch (e) { }
+        clearServerDraft();
         $('#ps-form').get(0).submit();
     }
 
@@ -1375,9 +1521,9 @@
     /* ---------------- init ---------------- */
     loadLocal();
     render();
-    checkCashRegister($('#ps-warehouse').val());
-    loadPromos();
-    setTimeout(focusSearch, 300);
+    initHeaderPickers();
+    setTimeout(initHeaderPickers, 300);
+    loadServerDraft();
 
 })(window.jQuery);
 </script>

@@ -4,7 +4,8 @@
     <meta charset="utf-8">
     <meta http-equiv="X-UA-Compatible" content="IE=edge">
     @if(!config('database.connections.saleprosaas_landlord'))
-    <link rel="icon" type="image/png" href="{{url('logo', $general_setting->site_logo)}}" />
+    @php($app_favicon = !empty($general_setting->favicon) ? $general_setting->favicon : $general_setting->site_logo)
+    <link rel="icon" type="image/png" href="{{url('logo/'.$app_favicon)}}" />
     <title>{{$general_setting->site_title}}</title>
     <meta name="description" content="">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -59,7 +60,8 @@
     @endif
 
     @else
-    <link rel="icon" type="image/png" href="{{url('../../logo', $general_setting->site_logo)}}" />
+    @php($app_favicon = !empty($general_setting->favicon) ? $general_setting->favicon : $general_setting->site_logo)
+    <link rel="icon" type="image/png" href="{{url('../../logo/'.$app_favicon)}}" />
     <title>{{$general_setting->site_title}}</title>
     <meta name="description" content="">
     <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -213,7 +215,7 @@
                 </div>
                 <div class="modal-body">
                   <p class="italic"><small>{{trans('file.The field labels marked with * are required input fields')}}.</small></p>
-                    {!! Form::open(['route' => 'expenses.store', 'method' => 'post']) !!}
+                    {!! Form::open(['route' => 'expenses.store', 'method' => 'post', 'files' => true]) !!}
                     <?php
                       $lims_expense_category_list = DB::table('expense_categories')->where('is_active', true)->get();
                       if(Auth::user()->role_id > 2)
@@ -249,7 +251,7 @@
                         </div>
                         <div class="col-md-6 form-group">
                             <label> {{trans('file.Account')}}</label>
-                            <select class="form-control selectpicker" name="account_id">
+                            <select class="form-control selectpicker" name="account_id" data-live-search="true" data-live-search-style="contains" data-size="10">
                             @foreach($lims_account_list as $account)
                                 @if($account->is_default)
                                 <option selected value="{{$account->id}}">{{$account->coa_label}}</option>
@@ -263,6 +265,11 @@
                       <div class="form-group">
                           <label>{{trans('file.Note')}}</label>
                           <textarea name="note" rows="3" class="form-control"></textarea>
+                      </div>
+                      <div class="form-group">
+                          <label>Lampiran Dokumen</label>
+                          <input type="file" name="document" class="form-control" accept=".jpg,.jpeg,.png,.gif,.pdf,.csv,.doc,.docx,.xls,.xlsx,.txt">
+                          <small class="form-text text-muted">Maksimal 10 MB.</small>
                       </div>
                       <div class="form-group">
                           <button type="submit" class="btn btn-primary">{{trans('file.submit')}}</button>
@@ -590,7 +597,12 @@
             $("#lims_productcodeSearch").focus();
           }
 
-          $("div.alert").delay(7000).slideUp(750);
+          $.ajaxSetup({
+              headers: {
+                  'X-CSRF-TOKEN': $('meta[name="csrf-token"]').attr('content')
+              }
+          });
+	          $("div.alert").delay(7000).slideUp(750);
           $('select').selectpicker({
               style: 'btn-link',
           });

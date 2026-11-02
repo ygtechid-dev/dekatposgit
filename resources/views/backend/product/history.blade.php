@@ -214,7 +214,9 @@
                             <th>Jenis Transaksi</th>
                             <th>{{trans('file.reference')}}</th>
                             <th>{{trans('file.Warehouse')}}</th>
-                            <th>{{trans('file.qty')}}</th>
+                            <th>Masuk</th>
+                            <th>Keluar</th>
+                            <th>Saldo</th>
                             <th>{{trans('file.Subtotal')}}</th>
                         </tr>
                     </thead>
@@ -832,7 +834,8 @@
                 product_id: product_id,
                 starting_date: starting_date,
                 ending_date: ending_date,
-                warehouse_id: warehouse_id
+                warehouse_id: warehouse_id,
+                warehouse_type: warehouse_type
             },
             dataType: "json",
             type:"post"
@@ -843,7 +846,9 @@
             {"data": "type"},
             {"data": "reference_no"},
             {"data": "warehouse"},
-            {"data": "qty"},
+            {"data": "stock_in"},
+            {"data": "stock_out"},
+            {"data": "balance"},
             {"data": "sub_total"}
         ],
         'language': {
@@ -859,7 +864,7 @@
         'columnDefs': [
             {
                 "orderable": false,
-                'targets': [0, 1, 2, 3, 4, 5, 6]
+                'targets': [0, 1, 2, 3, 4, 5, 6, 7, 8]
             },
             {
                 'render': function(data, type, row, meta){

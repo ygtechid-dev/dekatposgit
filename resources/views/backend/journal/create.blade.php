@@ -17,7 +17,7 @@
                 <div class="row">
                     <div class="col-md-4 form-group">
                         <label>Tanggal *</label>
-                        <input type="date" name="journal_date" value="{{ old('journal_date', date('Y-m-d')) }}" required class="form-control">
+                        <input type="date" name="journal_date" value="{{ old('journal_date', date('Y-m-d')) }}" required class="form-control" data-draft-ignore="true">
                     </div>
                     <div class="col-md-8 form-group">
                         <label>Deskripsi</label>
@@ -38,29 +38,29 @@
                     <tbody>
                         <tr class="journal-line">
                             <td>
-                                <select name="chart_of_account_id[]" class="selectpicker form-control" data-live-search="true" data-live-search-style="begins" title="- Pilih Akun -" required>
+                                <select name="chart_of_account_id[]" class="selectpicker form-control" data-live-search="true" data-live-search-style="contains" data-size="10" title="- Pilih Akun -" required>
                                     <option value="">- Pilih Akun -</option>
                                     @foreach($lims_coa_all as $coa)
-                                    <option value="{{ $coa->id }}">{{ $coa->code }} - {{ $coa->name }}</option>
+                                    <option value="{{ $coa->id }}" data-tokens="{{ $coa->code }} {{ $coa->name }}">{{ $coa->code }} - {{ $coa->name }}</option>
                                     @endforeach
                                 </select>
                             </td>
-                            <td><input type="number" step="any" name="debit[]" class="form-control debit-input" value="0"></td>
-                            <td><input type="number" step="any" name="credit[]" class="form-control credit-input" value="0"></td>
+                            <td><input type="text" inputmode="decimal" name="debit[]" class="form-control debit-input money-display-input" value="0"></td>
+                            <td><input type="text" inputmode="decimal" name="credit[]" class="form-control credit-input money-display-input" value="0"></td>
                             <td><input type="text" name="note[]" class="form-control"></td>
                             <td><button type="button" class="btn btn-danger btn-sm remove-line"><i class="dripicons-trash"></i></button></td>
                         </tr>
                         <tr class="journal-line">
                             <td>
-                                <select name="chart_of_account_id[]" class="selectpicker form-control" data-live-search="true" data-live-search-style="begins" title="- Pilih Akun -" required>
+                                <select name="chart_of_account_id[]" class="selectpicker form-control" data-live-search="true" data-live-search-style="contains" data-size="10" title="- Pilih Akun -" required>
                                     <option value="">- Pilih Akun -</option>
                                     @foreach($lims_coa_all as $coa)
-                                    <option value="{{ $coa->id }}">{{ $coa->code }} - {{ $coa->name }}</option>
+                                    <option value="{{ $coa->id }}" data-tokens="{{ $coa->code }} {{ $coa->name }}">{{ $coa->code }} - {{ $coa->name }}</option>
                                     @endforeach
                                 </select>
                             </td>
-                            <td><input type="number" step="any" name="debit[]" class="form-control debit-input" value="0"></td>
-                            <td><input type="number" step="any" name="credit[]" class="form-control credit-input" value="0"></td>
+                            <td><input type="text" inputmode="decimal" name="debit[]" class="form-control debit-input money-display-input" value="0"></td>
+                            <td><input type="text" inputmode="decimal" name="credit[]" class="form-control credit-input money-display-input" value="0"></td>
                             <td><input type="text" name="note[]" class="form-control"></td>
                             <td><button type="button" class="btn btn-danger btn-sm remove-line"><i class="dripicons-trash"></i></button></td>
                         </tr>
@@ -97,7 +97,10 @@
 
     var journalDecimal = {{ (int) $general_setting->decimal }};
 
-    $('.selectpicker').selectpicker();
+    $('.selectpicker').selectpicker({
+        liveSearch: true,
+        liveSearchStyle: 'contains'
+    });
 
     function formatMoney(num) {
         return (num || 0).toLocaleString('id-ID', { minimumFractionDigits: journalDecimal, maximumFractionDigits: journalDecimal });
@@ -119,7 +122,10 @@
     $('#add-line').on('click', function() {
         var $newRow = lineTemplate();
         $('#journal-lines-table tbody').append($newRow);
-        $newRow.find('.selectpicker').selectpicker();
+        $newRow.find('.selectpicker').selectpicker({
+            liveSearch: true,
+            liveSearchStyle: 'contains'
+        });
         recalcTotals();
     });
 
@@ -136,8 +142,8 @@
 
     function recalcTotals() {
         var totalDebit = 0, totalCredit = 0;
-        $('.debit-input').each(function() { totalDebit += parseFloat($(this).val()) || 0; });
-        $('.credit-input').each(function() { totalCredit += parseFloat($(this).val()) || 0; });
+        $('.debit-input').each(function() { totalDebit += parseLocalizedNumber($(this).val()); });
+        $('.credit-input').each(function() { totalCredit += parseLocalizedNumber($(this).val()); });
         $('#total-debit').text(formatMoney(totalDebit));
         $('#total-credit').text(formatMoney(totalCredit));
         if (Math.abs(totalDebit - totalCredit) > 0.01 || totalDebit === 0) {
@@ -149,8 +155,8 @@
 
     $('#journal-form').on('submit', function(e) {
         var totalDebit = 0, totalCredit = 0;
-        $('.debit-input').each(function() { totalDebit += parseFloat($(this).val()) || 0; });
-        $('.credit-input').each(function() { totalCredit += parseFloat($(this).val()) || 0; });
+        $('.debit-input').each(function() { totalDebit += parseLocalizedNumber($(this).val()); });
+        $('.credit-input').each(function() { totalCredit += parseLocalizedNumber($(this).val()); });
         if (Math.abs(totalDebit - totalCredit) > 0.01 || totalDebit === 0) {
             e.preventDefault();
             alert('Jurnal tidak seimbang: total debit harus sama dengan total kredit dan tidak boleh nol.');

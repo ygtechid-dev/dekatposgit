@@ -1,8 +1,9 @@
 @extends('backend.layout.main') @section('content')
 
 <section class="forms">
-    <div class="container-fluid">
+    <div class="container-fluid d-flex justify-content-between align-items-center">
         <h3>Laporan Laba Rugi</h3>
+        <button type="button" id="print-profit-loss" class="btn btn-primary"><i class="fa fa-print"></i> Print Laba Rugi</button>
     </div>
     {!! Form::open(['route' => 'accounts.profitloss', 'method' => 'get', 'id' => 'profit-loss-filter']) !!}
     <div class="row mb-3">
@@ -25,40 +26,44 @@
     </div>
     {!! Form::close() !!}
 
-    <div class="table-responsive mb-4">
+    <div id="profit-loss-print-area" class="table-responsive mb-4">
         <table id="profit-loss-table" class="table table-hover">
             <tbody>
                 <tr>
                     <th colspan="2">Pendapatan</th>
                 </tr>
-                <tr>
-                    <td>Penjualan Kotor</td>
-                    <td class="text-right">{{number_format((float)$gross_sales, $general_setting->decimal, ',', '.')}}</td>
-                </tr>
-                <tr>
-                    <td>Diskon Order</td>
-                    <td class="text-right">-{{number_format((float)$order_discount, $general_setting->decimal, ',', '.')}}</td>
-                </tr>
-                <tr>
-                    <td>Pajak Order</td>
-                    <td class="text-right">{{number_format((float)$order_tax, $general_setting->decimal, ',', '.')}}</td>
-                </tr>
-                <tr>
-                    <td>Ongkos Kirim</td>
-                    <td class="text-right">{{number_format((float)$shipping_cost, $general_setting->decimal, ',', '.')}}</td>
-                </tr>
-                <tr>
-                    <td>Retur Penjualan</td>
-                    <td class="text-right">-{{number_format((float)$sale_returns, $general_setting->decimal, ',', '.')}}</td>
-                </tr>
+                @forelse($revenue_rows as $row)
+                    <tr>
+                        <td>
+                            {{ $row['coa']->code }} - {{ $row['coa']->name }}
+                            <a class="ml-2" href="{{ route('accounts.generalledger', ['chart_of_account_id' => $row['coa']->id, 'start_date' => $start_date, 'end_date' => $end_date]) }}" target="_blank">Mutasi</a>
+                        </td>
+                        <td class="text-right">{{number_format((float)$row['amount'], $general_setting->decimal, ',', '.')}}</td>
+                    </tr>
+                @empty
+                    <tr>
+                        <td colspan="2" class="text-muted">Belum ada mutasi pendapatan pada periode ini.</td>
+                    </tr>
+                @endforelse
                 <tr class="active">
-                    <th>Penjualan Bersih</th>
-                    <th class="text-right">{{number_format((float)$net_sales, $general_setting->decimal, ',', '.')}}</th>
+                    <th>Total Pendapatan Bersih</th>
+                    <th class="text-right">{{number_format((float)$total_revenue, $general_setting->decimal, ',', '.')}}</th>
                 </tr>
-                <tr>
-                    <td>Harga Pokok Penjualan</td>
-                    <td class="text-right">-{{number_format((float)$cost_of_goods_sold, $general_setting->decimal, ',', '.')}}</td>
-                </tr>
+                @foreach($hpp_rows as $row)
+                    <tr>
+                        <td>
+                            {{ $row['coa']->code }} - {{ $row['coa']->name }}
+                            <a class="ml-2" href="{{ route('accounts.generalledger', ['chart_of_account_id' => $row['coa']->id, 'start_date' => $start_date, 'end_date' => $end_date]) }}" target="_blank">Mutasi</a>
+                        </td>
+                        <td class="text-right">-{{number_format((float)$row['amount'], $general_setting->decimal, ',', '.')}}</td>
+                    </tr>
+                @endforeach
+                @if(!count($hpp_rows))
+                    <tr>
+                        <td>5100 - Harga Pokok Penjualan</td>
+                        <td class="text-right">-{{number_format(0, $general_setting->decimal, ',', '.')}}</td>
+                    </tr>
+                @endif
                 <tr class="active">
                     <th>Laba Kotor</th>
                     <th class="text-right">{{number_format((float)$gross_profit, $general_setting->decimal, ',', '.')}}</th>
@@ -66,14 +71,27 @@
                 <tr>
                     <th colspan="2">Beban</th>
                 </tr>
-                <tr>
-                    <td>Biaya Operasional</td>
-                    <td class="text-right">-{{number_format((float)$expenses, $general_setting->decimal, ',', '.')}}</td>
-                </tr>
-                <tr>
-                    <td>Payroll / Gaji</td>
-                    <td class="text-right">-{{number_format((float)$payrolls, $general_setting->decimal, ',', '.')}}</td>
-                </tr>
+                @forelse($expense_rows as $row)
+                    <tr>
+                        <td>
+                            {{ $row['coa']->code }} - {{ $row['coa']->name }}
+                            <a class="ml-2" href="{{ route('accounts.generalledger', ['chart_of_account_id' => $row['coa']->id, 'start_date' => $start_date, 'end_date' => $end_date]) }}" target="_blank">Mutasi</a>
+                        </td>
+                        <td class="text-right">-{{number_format((float)$row['amount'], $general_setting->decimal, ',', '.')}}</td>
+                    </tr>
+                    @if(!empty($row['children']))
+                        @foreach($row['children'] as $child)
+                            <tr>
+                                <td class="pl-4 text-muted">- {{ $child['label'] }}</td>
+                                <td class="text-right text-muted">-{{number_format((float)$child['amount'], $general_setting->decimal, ',', '.')}}</td>
+                            </tr>
+                        @endforeach
+                    @endif
+                @empty
+                    <tr>
+                        <td colspan="2" class="text-muted">Belum ada mutasi beban pada periode ini.</td>
+                    </tr>
+                @endforelse
                 <tr class="active">
                     <th>Total Beban</th>
                     <th class="text-right">-{{number_format((float)$total_expenses, $general_setting->decimal, ',', '.')}}</th>
@@ -112,6 +130,21 @@
         $('#filter_month').val('');
     });
 
+    $('#print-profit-loss').on('click', function() {
+        var report = $('#profit-loss-print-area').clone();
+        report.find('.dt-buttons, .dataTables_filter, .dataTables_info, .dataTables_paginate, .dataTables_length, a').remove();
+        var printWindow = window.open('', '_blank');
+        printWindow.document.write('<html><head><title>Laporan Laba Rugi</title>' +
+            '<style>body{font-family:Arial,sans-serif;color:#222;margin:24px}h2,p{text-align:center;margin:0 0 8px}table{width:100%;border-collapse:collapse;margin-top:18px}th,td{border:1px solid #bbb;padding:8px}.text-right{text-align:right}.text-muted{color:#666}.pl-4{padding-left:28px}.active,.tfoot{font-weight:700;background:#eee}@page{size:A4 portrait;margin:12mm}</style>' +
+            '</head><body><h2>Laporan Laba Rugi</h2><p>{{ date('d/m/Y', strtotime($start_date)) }} - {{ date('d/m/Y', strtotime($end_date)) }}</p>' + report.html() + '</body></html>');
+        printWindow.document.close();
+        printWindow.onload = function() {
+            printWindow.focus();
+            printWindow.print();
+            printWindow.close();
+        };
+    });
+
     $('#profit-loss-table').DataTable({
         paging: false,
         searching: false,
@@ -122,7 +155,6 @@
             {extend: 'pdf', text: '<i title="export to pdf" class="fa fa-file-pdf-o"></i>'},
             {extend: 'excel', text: '<i title="export to excel" class="dripicons-document-new"></i>'},
             {extend: 'csv', text: '<i title="export to csv" class="fa fa-file-text-o"></i>'},
-            {extend: 'print', text: '<i title="print" class="fa fa-print"></i>'},
         ]
     });
 </script>

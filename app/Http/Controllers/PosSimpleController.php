@@ -137,7 +137,7 @@ class PosSimpleController extends Controller
             ->get();
 
         foreach ($products as $product) {
-            $rows[] = $this->rowFromProduct($product, $product->code, $product->name, 0, $warehouse_id, $level, null);
+            $rows[] = $this->rowFromProduct($product, $product->code, $product->name, 0, 0, $warehouse_id, $level, null);
         }
 
         // --- produk bervarian: dicari lewat item_code / nama varian --------------
@@ -157,6 +157,7 @@ class PosSimpleController extends Controller
                     'products.*',
                     'product_variants.item_code as v_item_code',
                     'product_variants.additional_price as v_additional_price',
+                    'product_variants.additional_cost as v_additional_cost',
                     'product_variants.variant_id as v_variant_id',
                     'variants.name as v_name'
                 )
@@ -173,6 +174,7 @@ class PosSimpleController extends Controller
                     $variant->v_item_code,
                     $product->name . ' [' . $variant->v_name . ']',
                     (float) $variant->v_additional_price,
+                    (float) $variant->v_additional_cost,
                     $warehouse_id,
                     $level,
                     $variant->v_variant_id
@@ -186,7 +188,7 @@ class PosSimpleController extends Controller
     /**
      * Susun satu baris hasil pencarian.
      */
-    private function rowFromProduct($product, $code, $name, $additional_price, $warehouse_id, $level, $variant_id)
+    private function rowFromProduct($product, $code, $name, $additional_price, $additional_cost, $warehouse_id, $level, $variant_id)
     {
         $warehouse_row = null;
         if ($warehouse_id) {
@@ -211,7 +213,8 @@ class PosSimpleController extends Controller
             $price = $base;
         }
 
-        $units = $this->saleUnits($product, $price);
+        $base_cost = (float) $product->cost + (float) $additional_cost;
+        $units = $this->saleUnits($product, $price, $base_cost);
 
         return [
             'id'         => $product->id,
@@ -220,6 +223,7 @@ class PosSimpleController extends Controller
             'unit'       => count($units) ? $units[0]['name'] : 'n/a',
             'price'      => count($units) ? $units[0]['price'] : round($price, 2),
             'base_price' => round($price, 2),
+            'base_cost'  => round($base_cost, 2),
             'units'      => $units,
             'stock'      => $stock,
             'is_variant' => $product->is_variant ? 1 : 0,
@@ -233,13 +237,16 @@ class PosSimpleController extends Controller
      * `stock_factor` dipakai POS Simple untuk menampilkan sisa stok dalam satuan
      * yang dipilih (stok disimpan dalam satuan dasar).
      */
-    private function saleUnits($product, $base_price)
+    private function saleUnits($product, $base_price, $base_cost = null)
     {
+        $base_cost = $base_cost === null ? (float) $product->cost : (float) $base_cost;
+
         if ($product->type != 'standard') {
             return [[
                 'id'           => 0,
                 'name'         => 'n/a',
                 'price'        => round($base_price, 2),
+                'cost'         => round($base_cost, 2),
                 'stock_factor' => 1,
                 'tiers'        => [],
             ]];
@@ -264,6 +271,7 @@ class PosSimpleController extends Controller
                     'id'           => 0,
                     'name'         => 'n/a',
                     'price'        => round($base_price, 2),
+                    'cost'         => round($base_cost, 2),
                     'stock_factor' => 1,
                     'tiers'        => [],
                 ]];
@@ -278,6 +286,7 @@ class PosSimpleController extends Controller
                 'id'           => $unit->id,
                 'name'         => $unit->unit_name,
                 'price'        => round($this->unitPrice($product, $unit, $base_price, $factor), 2),
+                'cost'         => round($base_cost * $factor, 2),
                 'stock_factor' => $factor,
                 'tiers'        => $this->unitTiers($product, $unit),
             ];

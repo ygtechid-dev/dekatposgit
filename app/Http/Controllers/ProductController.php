@@ -1510,135 +1510,114 @@ class ProductController extends Controller
     // baris pada rentang tanggal dan produk terkait dikumpulkan.
     public function allHistoryData(Request $request)
     {
-        $product_id = $request->input('product_id');
-        $warehouse_id = $request->input('warehouse_id');
-        $starting_date = $request->input('starting_date');
-        $ending_date = $request->input('ending_date');
-
+        $role = Role::find(Auth::user()->role_id);
+        abort_unless($role && ($role->hasPermissionTo('product_history') || $role->hasPermissionTo('products-index')), 403);
+        $productId = $request->input('product_id');
+        $warehouseId = $request->input('warehouse_id');
+        if (Auth::user()->role_id > 2) {
+            $warehouseId = Auth::user()->warehouse_id;
+            abort_unless($warehouseId, 403);
+        }
+        $warehouses = DB::table('warehouses')
+            ->when($warehouseId, fn($q) => $q->where('id', $warehouseId))
+            ->when($request->input('warehouse_type'), fn($q, $type) => $q->where('type', $type))
+            ->pluck('name', 'id');
+        $units = DB::table('units')->get()->keyBy('id');
+        $baseQty = function ($qty, $unitId) use ($units) {
+            $unit = $units->get($unitId);
+            if (!$unit) return (float) $qty;
+            return $unit->operator === '*'
+                ? (float) $qty * (float) $unit->operation_value
+                : (float) $qty / max((float) $unit->operation_value, 0.000001);
+        };
         $rows = collect();
-
-        $sales = DB::table('sales')
-            ->join('product_sales', 'sales.id', '=', 'product_sales.sale_id')
-            ->join('warehouses', 'sales.warehouse_id', '=', 'warehouses.id')
-            ->where('product_sales.product_id', $product_id)
-            ->whereDate('sales.created_at', '>=', $starting_date)
-            ->whereDate('sales.created_at', '<=', $ending_date)
-            ->when($warehouse_id, fn($q) => $q->where('sales.warehouse_id', $warehouse_id))
-            ->select('sales.reference_no', 'sales.created_at', 'warehouses.name as warehouse', 'product_sales.qty', 'product_sales.total')
-            ->get();
-        foreach ($sales as $row) {
-            $rows->push(['type' => 'Penjualan', 'reference_no' => $row->reference_no, 'created_at' => $row->created_at, 'warehouse' => $row->warehouse, 'qty' => $row->qty, 'sub_total' => $row->total]);
+        $sources = [
+            ['sales', 'product_sales', 'sale_id', 'sale_unit_id', 'qty', 'Penjualan', -1],
+            ['purchases', 'product_purchases', 'purchase_id', 'purchase_unit_id', 'recieved', 'Pembelian', 1],
+            ['returns', 'product_returns', 'return_id', 'sale_unit_id', 'qty', 'Retur Penjualan', 1],
+            ['return_purchases', 'purchase_product_return', 'return_id', 'purchase_unit_id', 'qty', 'Retur Pembelian', -1],
+            ['adjustments', 'product_adjustments', 'adjustment_id', null, 'qty', 'Penyesuaian', 1],
+        ];
+        foreach ($sources as [$header, $detail, $foreignKey, $unitField, $qtyField, $label, $direction]) {
+            $query = DB::table($header)->join($detail, "$header.id", '=', "$detail.$foreignKey")
+                ->where("$detail.product_id", $productId)
+                ->whereIn("$header.warehouse_id", $warehouses->keys())
+                ->select("$detail.*", "$header.created_at", "$header.reference_no", "$header.warehouse_id")
+                ->orderBy("$detail.id");
+            if ($header === 'sales') $query->where('sales.sale_status', 1);
+            foreach ($query->get() as $row) {
+                $qty = $baseQty($row->$qtyField, $unitField ? $row->$unitField : null);
+                $sign = $header === 'adjustments' && $row->action === '-' ? -1 : $direction;
+                $rows->push([
+                    'type' => $label,
+                    'reference_no' => $row->reference_no,
+                    'created_at' => $row->created_at,
+                    'warehouse' => $warehouses[$row->warehouse_id],
+                    'stock_in' => $sign > 0 ? $qty : 0,
+                    'stock_out' => $sign < 0 ? $qty : 0,
+                    'sub_total' => $header === 'adjustments' ? $qty * $row->unit_cost : $row->total,
+                ]);
+            }
         }
-
-        $purchases = DB::table('purchases')
-            ->join('product_purchases', 'purchases.id', '=', 'product_purchases.purchase_id')
-            ->join('warehouses', 'purchases.warehouse_id', '=', 'warehouses.id')
-            ->where('product_purchases.product_id', $product_id)
-            ->whereDate('purchases.created_at', '>=', $starting_date)
-            ->whereDate('purchases.created_at', '<=', $ending_date)
-            ->when($warehouse_id, fn($q) => $q->where('purchases.warehouse_id', $warehouse_id))
-            ->select('purchases.reference_no', 'purchases.created_at', 'warehouses.name as warehouse', 'product_purchases.qty', 'product_purchases.total')
-            ->get();
-        foreach ($purchases as $row) {
-            $rows->push(['type' => 'Pembelian', 'reference_no' => $row->reference_no, 'created_at' => $row->created_at, 'warehouse' => $row->warehouse, 'qty' => $row->qty, 'sub_total' => $row->total]);
-        }
-
-        $sale_returns = DB::table('returns')
-            ->join('product_returns', 'returns.id', '=', 'product_returns.return_id')
-            ->join('warehouses', 'returns.warehouse_id', '=', 'warehouses.id')
-            ->where('product_returns.product_id', $product_id)
-            ->whereDate('returns.created_at', '>=', $starting_date)
-            ->whereDate('returns.created_at', '<=', $ending_date)
-            ->when($warehouse_id, fn($q) => $q->where('returns.warehouse_id', $warehouse_id))
-            ->select('returns.reference_no', 'returns.created_at', 'warehouses.name as warehouse', 'product_returns.qty', 'product_returns.total')
-            ->get();
-        foreach ($sale_returns as $row) {
-            $rows->push(['type' => 'Retur Penjualan', 'reference_no' => $row->reference_no, 'created_at' => $row->created_at, 'warehouse' => $row->warehouse, 'qty' => $row->qty, 'sub_total' => $row->total]);
-        }
-
-        $purchase_returns = DB::table('return_purchases')
-            ->join('purchase_product_return', 'return_purchases.id', '=', 'purchase_product_return.return_id')
-            ->join('warehouses', 'return_purchases.warehouse_id', '=', 'warehouses.id')
-            ->where('purchase_product_return.product_id', $product_id)
-            ->whereDate('return_purchases.created_at', '>=', $starting_date)
-            ->whereDate('return_purchases.created_at', '<=', $ending_date)
-            ->when($warehouse_id, fn($q) => $q->where('return_purchases.warehouse_id', $warehouse_id))
-            ->select('return_purchases.reference_no', 'return_purchases.created_at', 'warehouses.name as warehouse', 'purchase_product_return.qty', 'purchase_product_return.total')
-            ->get();
-        foreach ($purchase_returns as $row) {
-            $rows->push(['type' => 'Retur Pembelian', 'reference_no' => $row->reference_no, 'created_at' => $row->created_at, 'warehouse' => $row->warehouse, 'qty' => $row->qty, 'sub_total' => $row->total]);
-        }
-
-        $adjustments = DB::table('adjustments')
-            ->join('product_adjustments', 'adjustments.id', '=', 'product_adjustments.adjustment_id')
-            ->join('warehouses', 'adjustments.warehouse_id', '=', 'warehouses.id')
-            ->where('product_adjustments.product_id', $product_id)
-            ->whereDate('adjustments.created_at', '>=', $starting_date)
-            ->whereDate('adjustments.created_at', '<=', $ending_date)
-            ->when($warehouse_id, fn($q) => $q->where('adjustments.warehouse_id', $warehouse_id))
-            ->select('adjustments.reference_no', 'adjustments.created_at', 'warehouses.name as warehouse', 'product_adjustments.qty', 'product_adjustments.action', 'product_adjustments.unit_cost')
-            ->get();
-        foreach ($adjustments as $row) {
-            $label = $row->action == '-' ? 'Penyesuaian (Berkurang)' : 'Penyesuaian (Bertambah)';
-            $rows->push(['type' => $label, 'reference_no' => $row->reference_no, 'created_at' => $row->created_at, 'warehouse' => $row->warehouse, 'qty' => $row->qty, 'sub_total' => $row->qty * $row->unit_cost]);
-        }
-
         $transfers = DB::table('transfers')
             ->join('product_transfer', 'transfers.id', '=', 'product_transfer.transfer_id')
-            ->join('warehouses as from_warehouses', 'transfers.from_warehouse_id', '=', 'from_warehouses.id')
-            ->join('warehouses as to_warehouses', 'transfers.to_warehouse_id', '=', 'to_warehouses.id')
-            ->where('product_transfer.product_id', $product_id)
-            ->whereDate('transfers.created_at', '>=', $starting_date)
-            ->whereDate('transfers.created_at', '<=', $ending_date)
-            ->when($warehouse_id, function($q) use ($warehouse_id) {
-                $q->where(function($query) use ($warehouse_id) {
-                    $query->where('transfers.from_warehouse_id', $warehouse_id)
-                        ->orWhere('transfers.to_warehouse_id', $warehouse_id);
-                });
-            })
-            ->select('transfers.reference_no', 'transfers.created_at', 'from_warehouses.name as from_warehouse', 'to_warehouses.name as to_warehouse', 'product_transfer.qty', 'product_transfer.total')
+            ->where('product_transfer.product_id', $productId)
+            ->whereIn('transfers.status', [1, 3])
+            ->select('transfers.created_at', 'transfers.reference_no', 'transfers.status',
+                'transfers.from_warehouse_id', 'transfers.to_warehouse_id',
+                'product_transfer.qty', 'product_transfer.purchase_unit_id', 'product_transfer.total')
             ->get();
-        foreach ($transfers as $row) {
-            $rows->push(['type' => 'Transfer', 'reference_no' => $row->reference_no, 'created_at' => $row->created_at, 'warehouse' => $row->from_warehouse.' &rarr; '.$row->to_warehouse, 'qty' => $row->qty, 'sub_total' => $row->total]);
+        foreach ($transfers as $transfer) {
+            $qty = $baseQty($transfer->qty, $transfer->purchase_unit_id);
+            foreach (['from_warehouse_id' => -1, 'to_warehouse_id' => 1] as $field => $direction) {
+                if (!$warehouses->has($transfer->$field) || ($direction === 1 && (int) $transfer->status !== 1)) continue;
+                $rows->push([
+                    'type' => $direction === 1 ? 'Transfer Masuk' : 'Transfer Keluar',
+                    'reference_no' => $transfer->reference_no,
+                    'created_at' => $transfer->created_at,
+                    'warehouse' => $warehouses[$transfer->$field],
+                    'stock_in' => $direction === 1 ? $qty : 0,
+                    'stock_out' => $direction === -1 ? $qty : 0,
+                    'sub_total' => $transfer->total,
+                ]);
+            }
         }
 
-        $rows = $rows->sortByDesc('created_at')->values();
-
+        // Reconstruct balances from current stock, including movements outside the date filter.
+        $balance = (float) DB::table('product_warehouse')->where('product_id', $productId)
+            ->whereIn('warehouse_id', $warehouses->keys())->sum('qty');
+        $rows = $rows->sortBy('created_at', SORT_REGULAR, true)->values()->map(function ($row) use (&$balance) {
+            $row['balance'] = $balance;
+            $balance -= $row['stock_in'] - $row['stock_out'];
+            return $row;
+        });
+        $rows = $rows->filter(function ($row) use ($request) {
+            $date = substr($row['created_at'], 0, 10);
+            return $date >= $request->input('starting_date') && $date <= $request->input('ending_date');
+        })->values();
         $totalData = $rows->count();
         $search = $request->input('search.value');
-        if(!empty($search)) {
-            $rows = $rows->filter(function($row) use ($search) {
-                return stripos($row['reference_no'], $search) !== false || stripos($row['type'], $search) !== false;
-            })->values();
+        if ($search) {
+            $rows = $rows->filter(fn($row) => stripos($row['reference_no'], $search) !== false
+                || stripos($row['type'], $search) !== false || stripos($row['warehouse'], $search) !== false)->values();
         }
         $totalFiltered = $rows->count();
-
-        $start = (int)$request->input('start');
-        $length = (int)$request->input('length');
-        if($length == -1)
-            $length = $totalFiltered;
-        $paged = $rows->slice($start, $length)->values();
-
-        $data = array();
-        foreach ($paged as $key => $row) {
-            $data[] = [
-                'key' => $key,
-                'type' => $row['type'],
-                'date' => date(config('date_format'), strtotime($row['created_at'])),
-                'reference_no' => $row['reference_no'],
-                'warehouse' => $row['warehouse'],
-                'qty' => number_format($row['qty'], config('decimal'), ',', '.'),
-                'sub_total' => number_format($row['sub_total'], config('decimal'), ',', '.'),
-            ];
-        }
-
-        $json_data = array(
-            "draw"            => intval($request->input('draw')),
-            "recordsTotal"    => intval($totalData),
-            "recordsFiltered" => intval($totalFiltered),
-            "data"            => $data
-        );
-        echo json_encode($json_data);
+        $length = (int) $request->input('length', 10);
+        $data = $rows->slice(max(0, (int) $request->input('start')), $length === -1 ? $totalFiltered : max(1, $length))
+            ->values()->map(function ($row, $key) {
+                $row['key'] = $key;
+                $row['date'] = date(config('date_format'), strtotime($row['created_at']));
+                foreach (['stock_in', 'stock_out', 'balance', 'sub_total'] as $field) {
+                    $row[$field] = number_format($row[$field], config('decimal'), ',', '.');
+                }
+                return $row;
+            });
+        return response()->json([
+            'draw' => (int) $request->input('draw'),
+            'recordsTotal' => $totalData,
+            'recordsFiltered' => $totalFiltered,
+            'data' => $data,
+        ]);
     }
 
     public function variantData($id)
@@ -2176,21 +2155,50 @@ class ProductController extends Controller
         $filePath=$upload->getRealPath();
         //open and read
         $file=fopen($filePath, 'r');
-        $header= fgetcsv($file);
+        $firstLine = fgets($file);
+        $delimiter = ',';
+        foreach ([',' , ';', "\t"] as $candidate) {
+            if (substr_count($firstLine, $candidate) > substr_count($firstLine, $delimiter)) {
+                $delimiter = $candidate;
+            }
+        }
+        rewind($file);
+        $header= fgetcsv($file, 0, $delimiter);
         $escapedHeader=[];
         //validate
         foreach ($header as $key => $value) {
-            $lheader=strtolower($value);
+            $lheader=strtolower(trim(preg_replace('/^\xEF\xBB\xBF/', '', $value)));
             $escapedItem=preg_replace('/[^a-z]/', '', $lheader);
             array_push($escapedHeader, $escapedItem);
         }
-        //looping through other columns
-        while($columns=fgetcsv($file))
-        {
-            foreach ($columns as $key => $value) {
-                $value=preg_replace('/\D/','',$value);
+        $required_headers = ['name', 'code', 'type', 'category', 'unitcode', 'cost', 'price'];
+        foreach ($required_headers as $required_header) {
+            if (!in_array($required_header, $escapedHeader)) {
+                return redirect()->back()->with('not_permitted', 'Format CSV tidak sesuai. Kolom wajib yang belum ada: ' . $required_header . '. Pakai contoh file import terbaru.');
             }
-           $data= array_combine($escapedHeader, $columns);
+        }
+        //looping through other columns
+        while($columns=fgetcsv($file, 0, $delimiter))
+        {
+            if (!array_filter($columns, function($value) { return trim((string)$value) !== ''; })) {
+                continue;
+            }
+            if (count($columns) < count($escapedHeader)) {
+                $columns = array_pad($columns, count($escapedHeader), '');
+            } elseif (count($columns) > count($escapedHeader)) {
+                $columns = array_slice($columns, 0, count($escapedHeader));
+            }
+            $data= array_combine($escapedHeader, $columns);
+            $data = array_merge([
+                'image' => '',
+                'brand' => '',
+                'productdetails' => '',
+                'variantvalue' => '',
+                'variantname' => '',
+                'itemcode' => '',
+                'additionalcost' => '',
+                'additionalprice' => '',
+            ], $data ?: []);
 
            if($data['brand'] != 'N/A' && $data['brand'] != ''){
                 $lims_brand_data = Brand::firstOrCreate(['title' => $data['brand'], 'is_active' => true]);
@@ -2238,6 +2246,8 @@ class ProductController extends Controller
            $warehouse_ids = Warehouse::where('is_active', true)->pluck('id');
            //dealing with variants
            if($data['variantvalue'] && $data['variantname']) {
+                $variant_option = [];
+                $variant_value = [];
                 $variantInfo = explode(",", $data['variantvalue']);
                 foreach ($variantInfo as $key => $info) {
                     $variant_option[] = strtok($info, "[");

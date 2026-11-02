@@ -177,7 +177,15 @@
             <div class="form-group">
                 <input type="hidden" name="customer_id">
                 <label>{{trans('file.Amount')}} *</label>
-                <input type="number" name="amount" step="any" class="form-control" required>
+                <input type="text" name="amount" inputmode="decimal" class="form-control money-display-input" required>
+            </div>
+            <div class="form-group">
+                <label>Akun Penerimaan (COA) *</label>
+                <select name="account_id" class="form-control selectpicker" data-live-search="true" data-live-search-style="contains" data-size="10" title="Pilih akun penerimaan..." required>
+                    @foreach($lims_account_list as $account)
+                        <option value="{{$account->id}}" data-tokens="{{$account->coa_label_code}} {{$account->coa_label_name}}" @if($account->is_default) selected @endif>{{$account->coa_label}}</option>
+                    @endforeach
+                </select>
             </div>
             <div class="form-group">
                 <label>{{trans('file.Note')}}</label>
@@ -203,7 +211,7 @@
             <div class="form-group">
                 <input type="hidden" name="customer_id">
                 <label>{{trans('file.Amount')}} *</label>
-                <input type="number" name="amount" step="any" class="form-control" required>
+                <input type="text" name="amount" inputmode="decimal" class="form-control money-display-input" required>
             </div>
             <div class="form-group">
                 <label>{{trans('file.Note')}}</label>
@@ -251,11 +259,11 @@
             </div>
             <div class="modal-body">
                 {!! Form::open(['route' => 'customer.updateDeposit', 'method' => 'post']) !!}
-                    <div class="form-group">
-                        <label>{{trans('file.Amount')}} *</label>
-                        <input type="number" name="amount" step="any" class="form-control" required>
-                    </div>
-                    <div class="form-group">
+                <div class="form-group">
+                    <label>{{trans('file.Amount')}} *</label>
+                    <input type="text" name="amount" inputmode="decimal" class="form-control money-display-input" required>
+                </div>
+                <div class="form-group">
                         <label>{{trans('file.Note')}}</label>
                         <textarea name="note" rows="4" class="form-control"></textarea>
                     </div>

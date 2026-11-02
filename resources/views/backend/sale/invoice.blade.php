@@ -88,7 +88,7 @@
     <div class="hidden-print">
         <table>
             <tr>
-                <td><a href="{{$url}}" class="btn btn-info"><i class="fa fa-arrow-left"></i> {{trans('file.Back')}}</a> </td>
+                <td><a id="receipt-back-button" href="{{$url}}" class="btn btn-info"><i class="fa fa-arrow-left"></i> {{trans('file.Back')}}</a> </td>
                 <td><button onclick="window.print();" class="btn btn-primary"><i class="dripicons-print"></i> {{trans('file.Print')}}</button></td>
             </tr>
         </table>
@@ -273,6 +273,14 @@
     function auto_print() {
         window.print();
     }
+
+    document.addEventListener('keydown', function(event) {
+        if (event.key === 'Escape' || event.keyCode === 27) {
+            event.preventDefault();
+            document.getElementById('receipt-back-button').click();
+        }
+    });
+
     setTimeout(auto_print, 1000);
 </script>
 

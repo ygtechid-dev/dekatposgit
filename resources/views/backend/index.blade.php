@@ -519,21 +519,29 @@
         });
     });
 
+    function formatDashboardAmount(value) {
+        value = parseFloat(value || 0);
+        return value.toLocaleString('id-ID', {
+            minimumFractionDigits: {{$general_setting->decimal}},
+            maximumFractionDigits: {{$general_setting->decimal}}
+        });
+    }
+
     function dashboardFilter(data){
         $('.revenue-data').hide();
-        $('.revenue-data').html(parseFloat(data[0]).toFixed({{$general_setting->decimal}}));
+        $('.revenue-data').html(formatDashboardAmount(data[0]));
         $('.revenue-data').show(500);
 
         $('.return-data').hide();
-        $('.return-data').html(parseFloat(data[1]).toFixed({{$general_setting->decimal}}));
+        $('.return-data').html(formatDashboardAmount(data[1]));
         $('.return-data').show(500);
 
         $('.profit-data').hide();
-        $('.profit-data').html(parseFloat(data[2]).toFixed({{$general_setting->decimal}}));
+        $('.profit-data').html(formatDashboardAmount(data[2]));
         $('.profit-data').show(500);
 
         $('.purchase_return-data').hide();
-        $('.purchase_return-data').html(parseFloat(data[3]).toFixed({{$general_setting->decimal}}));
+        $('.purchase_return-data').html(formatDashboardAmount(data[3]));
         $('.purchase_return-data').show(500);
     }
 </script>

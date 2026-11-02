@@ -18,6 +18,7 @@ use App\Models\RewardPointSetting;
 use App\Models\SmsTemplate;
 use App\Services\SmsService;
 use DB;
+use Illuminate\Support\Facades\Schema;
 use ZipArchive;
 use Twilio\Rest\Client;
 use Clickatell\Rest;
@@ -92,10 +93,12 @@ class SettingController extends Controller
             return redirect()->back()->with('not_permitted', 'This feature is disable for demo!');
 
         $this->validate($request, [
-            'site_logo' => 'image|mimes:jpg,jpeg,png,gif|max:100000',
+            'site_logo' => 'nullable|image|mimes:jpg,jpeg,png,gif,webp|max:100000',
+            'login_logo' => 'nullable|mimes:jpg,jpeg,png,gif,webp,svg|max:100000',
+            'favicon' => 'nullable|mimes:ico,png,jpg,jpeg,gif,webp,svg|max:100000',
         ]);
 
-        $data = $request->except('site_logo');
+        $data = $request->except('site_logo', 'login_logo', 'favicon');
         //return $data;
         //writting timezone info in .env file
         $path = app()->environmentFilePath();
@@ -137,6 +140,30 @@ class SettingController extends Controller
             $logoName = date("Ymdhis") . '.' . $ext;
             $logo->move('public/logo', $logoName);
             $general_setting->site_logo = $logoName;
+        }
+
+        if (($request->hasFile('login_logo') && !Schema::hasColumn('general_settings', 'login_logo')) || ($request->hasFile('favicon') && !Schema::hasColumn('general_settings', 'favicon'))) {
+            return redirect()->back()->with('not_permitted', 'Kolom login_logo dan favicon belum ada. Jalankan SQL tambahan terlebih dahulu.');
+        }
+
+        $login_logo = $request->login_logo;
+        if ($login_logo && Schema::hasColumn('general_settings', 'login_logo')) {
+            $this->fileDelete('logo/', $general_setting->login_logo);
+
+            $ext = pathinfo($login_logo->getClientOriginalName(), PATHINFO_EXTENSION);
+            $loginLogoName = date("Ymdhis") . '_login.' . $ext;
+            $login_logo->move('public/logo', $loginLogoName);
+            $general_setting->login_logo = $loginLogoName;
+        }
+
+        $favicon = $request->favicon;
+        if ($favicon && Schema::hasColumn('general_settings', 'favicon')) {
+            $this->fileDelete('logo/', $general_setting->favicon);
+
+            $ext = pathinfo($favicon->getClientOriginalName(), PATHINFO_EXTENSION);
+            $faviconName = date("Ymdhis") . '_favicon.' . $ext;
+            $favicon->move('public/logo', $faviconName);
+            $general_setting->favicon = $faviconName;
         }
         $general_setting->save();
         cache()->forget('general_setting');

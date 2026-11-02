@@ -14,10 +14,25 @@ use App\Mail\PayrollDetails;
 use Mail;
 use App\Models\MailSetting;
 use App\Services\JournalService;
+use App\Traits\FileHandleTrait;
 
 class PayrollController extends Controller
 {
-    use \App\Traits\MailInfo;
+    use \App\Traits\MailInfo, FileHandleTrait;
+
+    private function storeDocument($document)
+    {
+        $directory = public_path('documents/payroll');
+        if (!is_dir($directory)) {
+            mkdir($directory, 0755, true);
+        }
+
+        $extension = strtolower($document->getClientOriginalExtension());
+        $documentName = date('YmdHis') . '-' . uniqid() . '.' . $extension;
+        $document->move($directory, $documentName);
+
+        return $documentName;
+    }
 
     public function index()
     {
@@ -44,7 +59,17 @@ class PayrollController extends Controller
 
     public function store(Request $request)
     {
-        $data = $request->all();
+        $request->validate([
+            'employee_id' => 'required',
+            'account_id' => 'required',
+            'amount' => 'required|numeric|min:0.01',
+            'document' => 'nullable|file|mimes:jpg,jpeg,png,gif,pdf,csv,doc,docx,xls,xlsx,txt|max:10240',
+        ]);
+
+        $data = $request->except('document');
+        if ($request->hasFile('document')) {
+            $data['document'] = $this->storeDocument($request->file('document'));
+        }
         if(isset($data['created_at']))
             $data['created_at'] = date("Y-m-d", strtotime(str_replace("/", "-", $data['created_at'])));
         else
@@ -53,12 +78,7 @@ class PayrollController extends Controller
         $data['user_id'] = Auth::id();
         $lims_payroll_data = Payroll::create($data);
 
-        //auto-post journal: record payroll (Dr Beban Gaji, Cr Kas/Bank)
-        try {
-            $gaji_id = JournalService::accountIdByCode(JournalService::BEBAN_GAJI);
-            $credit_id = JournalService::coaIdForCashAccount($lims_payroll_data->account_id);
-            JournalService::postSimple($lims_payroll_data->created_at, 'Gaji ' . $lims_payroll_data->reference_no, $gaji_id, $credit_id, $lims_payroll_data->amount, 'payroll', $lims_payroll_data->id);
-        } catch (\Exception $e) {}
+        JournalService::postPayroll($lims_payroll_data);
 
         $message = 'Payroll creared succesfully';
         //collecting mail data
@@ -88,21 +108,28 @@ class PayrollController extends Controller
 
     public function update(Request $request, $id)
     {
-        $data = $request->all();
+        $request->validate([
+            'employee_id' => 'required',
+            'account_id' => 'required',
+            'amount' => 'required|numeric|min:0.01',
+            'document' => 'nullable|file|mimes:jpg,jpeg,png,gif,pdf,csv,doc,docx,xls,xlsx,txt|max:10240',
+        ]);
+
+        $data = $request->except('document');
         if(isset($data['created_at']))
             $data['created_at'] = date("Y-m-d", strtotime(str_replace("/", "-", $data['created_at'])));
         else
             $data['created_at'] = date("Y-m-d");
         $lims_payroll_data = Payroll::find($data['payroll_id']);
+        if ($request->hasFile('document')) {
+            $oldDocument = $lims_payroll_data->document;
+            $data['document'] = $this->storeDocument($request->file('document'));
+            $this->fileDelete('documents/payroll/', $oldDocument);
+        }
         $lims_payroll_data->update($data);
 
-        //auto-post journal: reverse old payroll entry and repost with updated values
-        try {
-            JournalService::reverseForReference('payroll', $lims_payroll_data->id);
-            $gaji_id = JournalService::accountIdByCode(JournalService::BEBAN_GAJI);
-            $credit_id = JournalService::coaIdForCashAccount($lims_payroll_data->account_id);
-            JournalService::postSimple($lims_payroll_data->created_at, 'Gaji ' . $lims_payroll_data->reference_no, $gaji_id, $credit_id, $lims_payroll_data->amount, 'payroll', $lims_payroll_data->id);
-        } catch (\Exception $e) {}
+        JournalService::reverseForReference('payroll', $lims_payroll_data->id);
+        JournalService::postPayroll($lims_payroll_data);
 
         return redirect('payroll')->with('message', 'Payroll updated succesfully');
     }
@@ -115,7 +142,10 @@ class PayrollController extends Controller
             try {
                 JournalService::reverseForReference('payroll', $id);
             } catch (\Exception $e) {}
-            $lims_payroll_data->delete();
+            if ($lims_payroll_data) {
+                $this->fileDelete('documents/payroll/', $lims_payroll_data->document);
+                $lims_payroll_data->delete();
+            }
         }
         return 'Payroll deleted successfully!';
     }
@@ -126,7 +156,10 @@ class PayrollController extends Controller
         try {
             JournalService::reverseForReference('payroll', $id);
         } catch (\Exception $e) {}
-        $lims_payroll_data->delete();
+        if ($lims_payroll_data) {
+            $this->fileDelete('documents/payroll/', $lims_payroll_data->document);
+            $lims_payroll_data->delete();
+        }
         return redirect('payroll')->with('not_permitted', 'Payroll deleted succesfully');
     }
 }

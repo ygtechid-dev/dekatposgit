@@ -8,6 +8,7 @@ use App\Models\Journal;
 use App\Models\JournalDetail;
 use App\Models\ExpenseCategory;
 use App\Models\Warehouse;
+use App\Models\User;
 use Illuminate\Support\Facades\DB;
 use Auth;
 
@@ -314,6 +315,45 @@ class JournalService
         return $coa->id;
     }
 
+    /**
+     * Cash account that holds approved cash sales for one cashier.
+     *
+     * A cashier keeps the same account even if they are later assigned to a
+     * different store, so the balance sheet and ledger remain traceable by
+     * the person who was responsible for the cash.
+     */
+    public static function cashierCashAccountId($userId)
+    {
+        $parentId = self::ensureAccountByCode(self::KAS, 'Kas', 'asset', 'debit');
+        $cashier = User::find($userId);
+        $code = self::KAS . '.KSR' . ($userId ?: '0');
+        $name = 'Kas Kasir ' . ($cashier ? $cashier->name : ($userId ?: 'Tanpa User'));
+
+        $coa = ChartOfAccount::where('code', $code)->first();
+        if ($coa) {
+            // Keep the label in sync when the cashier's name changes.
+            if ($coa->name !== $name) {
+                $coa->name = $name;
+                $coa->save();
+            }
+            return $coa->id;
+        }
+
+        $coa = ChartOfAccount::create([
+            'code' => $code,
+            'name' => $name,
+            'type' => 'asset',
+            'normal_balance' => 'debit',
+            'parent_id' => $parentId,
+            'opening_balance' => 0,
+            'description' => 'Auto-generated cash account for cashier user #' . ($userId ?: '0'),
+            'is_default' => 0,
+            'is_active' => 1,
+        ]);
+
+        return $coa->id;
+    }
+
     public static function receivableAccountIdForWarehouse($warehouseId)
     {
         $warehouse = $warehouseId ? Warehouse::find($warehouseId) : null;
@@ -384,6 +424,29 @@ class JournalService
             'Beban Operasional',
             'expense',
             'debit'
+        );
+    }
+
+    public static function payrollExpenseAccountId()
+    {
+        return self::ensureAccountByCode(
+            self::BEBAN_GAJI,
+            'Beban Gaji',
+            'expense',
+            'debit'
+        );
+    }
+
+    public static function postPayroll($payroll)
+    {
+        return self::postSimple(
+            $payroll->created_at,
+            'Gaji ' . $payroll->reference_no,
+            self::payrollExpenseAccountId(),
+            self::coaIdForCashAccount($payroll->account_id),
+            $payroll->amount,
+            'payroll',
+            $payroll->id
         );
     }
 
