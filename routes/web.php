@@ -624,6 +624,9 @@ Route::group(['middleware' => ['common', 'auth', 'active']], function() {
             Route::get('getDetails/{id}', 'getDetails');
             Route::get('showDetails/{warehouse_id}', 'showDetails');
             Route::post('close', 'close')->name('cashRegister.close');
+            Route::get('settle', 'settleList')->name('cashRegister.settle');
+            Route::get('approve/{id}', 'approve')->name('cashRegister.approve');
+            Route::get('reject/{id}', 'reject')->name('cashRegister.reject');
         });
     });
 
